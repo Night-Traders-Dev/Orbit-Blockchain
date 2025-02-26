@@ -18,8 +18,9 @@ NODE_OPERATOR_ADDRESS = "heoEnsiaowm391"
 
 @app.route('/blockchain', methods=['GET'])
 def get_blockchain():
-    """Returns the current blockchain."""
-    return jsonify([block.to_dict() for block in blockchain]), 200
+    """Returns the current blockchain from the database."""
+    blocks = database.get_all_blocks()  # Fetch all blocks from DB
+    return jsonify([block.to_dict() for block in blocks]), 200
 
 @app.route('/propose_block', methods=['POST'])
 def propose_block():
