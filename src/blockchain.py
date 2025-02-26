@@ -3,8 +3,6 @@ import json
 from block import Block
 import database
 
-blockchain = []
-
 def init_blockchain():
     """Initialize the blockchain with a genesis block if empty."""
     database.init_db()
@@ -13,18 +11,28 @@ def init_blockchain():
     if last_block is None:
         genesis_block = Block(0, "0", time.time(), [{"genesis": True}], "genesis")
         database.insert_block(genesis_block)
-        blockchain.append(genesis_block)
-    else:
-        blockchain.append(Block(*last_block[:5]))  # Load last block into memory
 
 def get_latest_block():
     """Retrieve the latest block from the blockchain."""
-    return blockchain[-1] if blockchain else None
+    last_block = database.get_last_block()
+    if not last_block:
+        print("[ERROR] No blocks found in the blockchain.")
+        return None  # Return None if no block exists
+    try:
+        return Block(
+            block_index=last_block["block_index"],
+            previous_hash=last_block["previous_hash"],
+            timestamp=last_block["timestamp"],
+            data=last_block["data"],
+            proposer=last_block["proposer"]
+        )
+    except KeyError as e:
+        print(f"[ERROR] Missing key {e} in the latest block data.")
+        return None
 
 def get_blockchain():
     """Retrieve the full blockchain from the database."""
-    blocks = database.get_all_blocks()
-    return [Block(*block[:5]) for block in blocks]
+    return database.get_all_blocks()
 
 def get_blockchain_stats():
     """Retrieve blockchain statistics for the explorer."""

@@ -1,7 +1,6 @@
 import sys
 import time
 import threading
-import json
 import requests
 from flask import Flask, request, jsonify
 from blockchain import init_blockchain, get_latest_block
@@ -9,10 +8,7 @@ from block import Block
 import database
 
 app = Flask(__name__)
-
 nodes = set()  # Store connected nodes
-transactions = []  # List of pending transactions
-spent_txns = set()  # Track spent transactions
 
 NODE_OPERATOR_ADDRESS = "heoEnsiaowm391"
 
@@ -36,7 +32,7 @@ def propose_block():
     for txn in tx_data:
         if not all(k in txn for k in ["tx_id", "sender", "receiver", "amount", "fee"]):
             return jsonify({"error": f"Invalid transaction format: {txn}"}), 400
-        if txn["tx_id"] in spent_txns:
+        if database.is_transaction_spent(txn["tx_id"]):
             return jsonify({"error": f"Double spend detected: {txn['tx_id']}"}), 400
         if txn["amount"] <= 0 or txn["fee"] < 0:
             return jsonify({"error": f"Invalid transaction amounts: {txn}"}), 400
@@ -73,9 +69,9 @@ def propose_block():
 
 def approve_and_add_block(new_block, tx_data):
     """Helper function to add a block to the blockchain."""
-    database.insert_block(new_block)  # Store block in DB
+    database.insert_block(new_block)  # Store block in RocksDB
     for txn in tx_data:
-        spent_txns.add(txn["tx_id"])  # Mark transactions as spent
+        database.mark_transaction_spent(txn["tx_id"])  # Mark transactions as spent
 
     threading.Thread(target=broadcast_block, args=(new_block,)).start()
 
@@ -88,9 +84,9 @@ def vote():
     if not block_data:
         return jsonify({"error": "No block data provided"}), 400
 
-    last_block = get_latest_block().to_dict()
-    vote = (block_data["previous_hash"] == last_block["hash"] and
-            block_data["block_index"] == last_block["block_index"] + 1)
+    last_block = get_latest_block()
+    vote = (block_data["previous_hash"] == last_block.hash and
+            block_data["block_index"] == last_block.block_index + 1)
 
     return jsonify({"vote": vote}), 200
 
@@ -103,9 +99,9 @@ def receive_block():
     if not block_data:
         return jsonify({"error": "No block data provided"}), 400
 
-    last_block = get_latest_block().to_dict()
+    last_block = get_latest_block()
 
-    if block_data["previous_hash"] == last_block["hash"] and block_data["index"] == last_block["index"] + 1:
+    if block_data["previous_hash"] == last_block.hash and block_data["block_index"] == last_block.block_index + 1:
         new_block = Block(
             block_data["block_index"],
             block_data["previous_hash"],
@@ -124,10 +120,10 @@ def new_transaction():
     data = request.get_json()
     tx_id = data.get("tx_id")
 
-    if not tx_id or tx_id in spent_txns:
+    if not tx_id or database.is_transaction_spent(tx_id):
         return jsonify({"error": "Invalid or duplicate transaction"}), 400
 
-    transactions.append(data)
+    database.insert_transaction(data)
     return jsonify({"status": "Transaction added"}), 200
 
 def collect_votes(block):

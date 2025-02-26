@@ -7,9 +7,9 @@ import threading
 # Node Discovery
 # ----------------------------
 def get_active_nodes():
-    """ Fetch active nodes from the network. """
+    """Fetch active nodes from the network."""
     try:
-        response = requests.get("http://localhost:5000/nodes")
+        response = requests.get("http://localhost:5000/nodes", timeout=5)
         if response.status_code == 200:
             return response.json()
     except requests.RequestException:
@@ -18,6 +18,9 @@ def get_active_nodes():
 
 NODE_URLS = get_active_nodes()
 
+# ----------------------------
+# Client Setup
+# ----------------------------
 NUM_CLIENTS = 100
 client_ids = [f"Client{i}" for i in range(1, NUM_CLIENTS + 1)]
 client_ids.append("Genesis")
@@ -34,9 +37,9 @@ lock = threading.Lock()
 # Transaction Handling
 # ----------------------------
 def propose_transaction(sender, receiver, amount, fee):
-    """ Propose a transaction to a node. """
+    """Propose a transaction to a node."""
     if amount <= 0:
-        print(f"[{sender}] Invalid transaction: cannot send 0 tokens.")
+        print(f"[{sender}] Invalid transaction: cannot send 0 or negative tokens.")
         return False
 
     tx_id = f"{sender}_{receiver}_{int(time.time())}"
@@ -72,7 +75,7 @@ def propose_transaction(sender, receiver, amount, fee):
 # Genesis Fund Distribution
 # ----------------------------
 def distribute_genesis_funds():
-    """ Distribute Genesis funds equally among clients. """
+    """Distribute Genesis funds equally among clients."""
     global local_balances
     with lock:
         genesis_balance = local_balances["Genesis"]
@@ -99,7 +102,7 @@ def distribute_genesis_funds():
 # Transaction Simulation
 # ----------------------------
 def simulate_transaction():
-    """ Simulate a transaction between random clients. """
+    """Simulate a transaction between random clients."""
     global block_count
     with lock:
         senders = [s for s in local_balances if s != "Genesis" and local_balances[s] > 0]
@@ -136,7 +139,7 @@ def simulate_transaction():
 # Worker Function
 # ----------------------------
 def transaction_worker():
-    """ Run transactions in a controlled loop. """
+    """Run transactions in a controlled loop."""
     while True:
         if not simulate_transaction():
             print("Terminating transaction simulation.")

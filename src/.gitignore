@@ -1,3 +1,4 @@
 __pycache__
 blockchain.db
-
+blockchain.db/
+blockchain.db/*

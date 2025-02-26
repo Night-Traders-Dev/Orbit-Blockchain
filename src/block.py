@@ -17,7 +17,7 @@ class Block:
 
     def to_dict(self):
         return {
-            "index": self.block_index,
+            "block_index": self.block_index,
             "previous_hash": self.previous_hash,
             "timestamp": self.timestamp,
             "data": self.data,

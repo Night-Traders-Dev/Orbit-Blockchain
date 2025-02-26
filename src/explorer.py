@@ -4,7 +4,7 @@ import sys
 import time
 
 def get_nodes(node_url):
-    """ Fetch known nodes from the given node. """
+    """Fetch known nodes from the given node."""
     url = f"{node_url}/nodes"
     try:
         response = requests.get(url, timeout=5)
@@ -16,7 +16,7 @@ def get_nodes(node_url):
     return [node_url]  # Default to the given node if discovery fails
 
 def fetch_blockchain(node_url):
-    """ Fetch blockchain data from the node. """
+    """Fetch blockchain data from the node."""
     url = f"{node_url}/blockchain"
     try:
         response = requests.get(url, timeout=5)
@@ -32,7 +32,7 @@ def fetch_blockchain(node_url):
         return None
 
 def view_node_stats(node_url):
-    """ Process blockchain stats based on the fetched data. """
+    """Process blockchain stats based on the fetched data."""
     blockchain_data = fetch_blockchain(node_url)
     if not blockchain_data:
         return None
@@ -43,17 +43,15 @@ def view_node_stats(node_url):
     total_fees_collected = 0
 
     for block in blockchain_data:
-        tx_data_raw = block.get("data", "[]")  # Transactions are stored as JSON strings
-        try:
-            tx_list = json.loads(tx_data_raw)  # Decode transaction data
-        except json.JSONDecodeError:
-            print(f"[{node_url}] Error decoding transactions for block {block.get('index', 'unknown')}")
+        tx_data = block.get("data", [])
+
+        if not isinstance(tx_data, list):  # Ensure transactions are properly formatted
+            print(f"[{node_url}] Invalid transaction format in block {block.get('block_index', 'unknown')}")
             continue
 
-        if isinstance(tx_list, list):
-            transactions.extend(tx_list)
-            total_amount_sent += sum(float(tx.get("amount", 0)) for tx in tx_list)
-            total_fees_collected += sum(float(tx.get("fee", 0)) for tx in tx_list)
+        transactions.extend(tx_data)
+        total_amount_sent += sum(float(tx.get("amount", 0)) for tx in tx_data)
+        total_fees_collected += sum(float(tx.get("fee", 0)) for tx in tx_data)
 
     total_transactions = len(transactions)
 
