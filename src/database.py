@@ -48,7 +48,7 @@ def insert_block(block):
     cursor.execute("""
     INSERT INTO blocks (block_index, previous_hash, timestamp, data, proposer, hash)
     VALUES (?, ?, ?, ?, ?, ?)
-    """, (block.index, block.previous_hash, block.timestamp, json.dumps(block.data), block.proposer, block.hash))
+    """, (block.block_index, block.previous_hash, block.timestamp, json.dumps(block.data), block.proposer, block.hash))
     
     conn.commit()
     conn.close()

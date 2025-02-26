@@ -10,9 +10,9 @@ import database
 
 app = Flask(__name__)
 
-nodes = set()
+nodes = set()  # Store connected nodes
 transactions = []  # List of pending transactions
-spent_txns = set()  # Set to track spent transactions
+spent_txns = set()  # Track spent transactions
 
 NODE_OPERATOR_ADDRESS = "heoEnsiaowm391"
 
@@ -28,25 +28,55 @@ def propose_block():
     proposer = data.get("proposer")
     tx_data = data.get("data")
 
-    if not proposer or not tx_data:
-        return jsonify({"error": "Missing proposer or data"}), 400
+    if not proposer or not isinstance(tx_data, list) or len(tx_data) == 0:
+        return jsonify({"error": "Missing or invalid proposer/transaction data"}), 400
 
+    # Validate transactions before block proposal
     for txn in tx_data:
+        if not all(k in txn for k in ["tx_id", "sender", "receiver", "amount", "fee"]):
+            return jsonify({"error": f"Invalid transaction format: {txn}"}), 400
         if txn["tx_id"] in spent_txns:
             return jsonify({"error": f"Double spend detected: {txn['tx_id']}"}), 400
+        if txn["amount"] <= 0 or txn["fee"] < 0:
+            return jsonify({"error": f"Invalid transaction amounts: {txn}"}), 400
 
+    # Fetch latest block
     last_block = get_latest_block()
-    new_block = Block(last_block. block_index + 1, last_block.hash, time.time(), tx_data, proposer)
+    new_block = Block(
+        block_index=last_block.block_index + 1,
+        previous_hash=last_block.hash,
+        timestamp=time.time(),
+        data=tx_data,
+        proposer=proposer
+    )
 
+    print(f"[DEBUG] Proposed Block: {new_block.to_dict()}")
+
+    # If this is the only node, approve the block automatically
+    if not nodes:
+        print("[INFO] No other nodes detected. Auto-approving block.")
+        approve_and_add_block(new_block, tx_data)
+        return jsonify({"status": "Block added (auto-approved)", "block": new_block.to_dict()}), 200
+
+    # Request votes from other nodes
     votes = collect_votes(new_block)
+    print(f"[DEBUG] Vote results: {votes}")
 
+    # Consensus: Majority must approve the block
     if votes.count(True) > votes.count(False):
-        database.insert_block(new_block)
-        spent_txns.update(tx["tx_id"] for tx in tx_data)
-        threading.Thread(target=broadcast_block, args=(new_block,)).start()
+        approve_and_add_block(new_block, tx_data)
         return jsonify({"status": "Block added", "block": new_block.to_dict()}), 200
     else:
+        print(f"[ERROR] Block rejected by network: {new_block.to_dict()}")
         return jsonify({"error": "Block rejected by network"}), 400
+
+def approve_and_add_block(new_block, tx_data):
+    """Helper function to add a block to the blockchain."""
+    database.insert_block(new_block)  # Store block in DB
+    for txn in tx_data:
+        spent_txns.add(txn["tx_id"])  # Mark transactions as spent
+
+    threading.Thread(target=broadcast_block, args=(new_block,)).start()
 
 @app.route('/vote', methods=['POST'])
 def vote():
@@ -58,7 +88,6 @@ def vote():
         return jsonify({"error": "No block data provided"}), 400
 
     last_block = get_latest_block().to_dict()
-
     vote = (block_data["previous_hash"] == last_block["hash"] and
             block_data["block_index"] == last_block["block_index"] + 1)
 
@@ -75,7 +104,7 @@ def receive_block():
 
     last_block = get_latest_block().to_dict()
 
-    if block_data["previous_hash"] == last_block["hash"] and block_data["block_index"] == last_block["block_index"] + 1:
+    if block_data["previous_hash"] == last_block["hash"] and block_data["index"] == last_block["index"] + 1:
         new_block = Block(
             block_data["block_index"],
             block_data["previous_hash"],
@@ -102,6 +131,10 @@ def new_transaction():
 
 def collect_votes(block):
     """Ask all nodes to vote on a proposed block."""
+    if not nodes:
+        print("[INFO] No nodes available for voting. Skipping vote collection.")
+        return [True]  # Auto-approve
+
     votes = []
     for node in nodes:
         try:
