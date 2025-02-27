@@ -1,7 +1,12 @@
 import json
 import plyvel
+#import rocksdb
 from block import Block
 
+#options = rocksdb.Options()
+#options.create_if_missing = True
+#options.error_if_exists = False
+#options.set_lock_file_num = 1
 DB_PATH = "blockchain.db"
 
 # Open RocksDB connection

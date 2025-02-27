@@ -1,6 +1,9 @@
 import time
 import json
 import threading
+import requests
+
+BROADCAST_URL = "http://localhost:5000/broadcast_block"
 
 def init_blockchain():
     """Initialize blockchain and ensure the first block exists."""
@@ -73,6 +76,8 @@ def get_blockchain_stats():
         "last_transactions": last_five_tx
     }
 
+
+
 def approve_and_add_block(new_block, tx_data):
     """Helper function to add a block to the blockchain with atomicity."""
     import database  # Prevent circular import
@@ -88,7 +93,19 @@ def approve_and_add_block(new_block, tx_data):
                 batch.put(tx_key, json.dumps(txn).encode())
                 batch.put(f'spent_{txn["tx_id"]}'.encode(), b'1')  # Mark spent
 
-        threading.Thread(target=broadcast_block, args=(new_block,)).start()
+        # Start broadcasting in a separate thread
+        threading.Thread(target=broadcast_block_request, args=(new_block,)).start()
         print(f"[INFO] Block {new_block.block_index} committed successfully.")
     except Exception as e:
         print(f"[ERROR] Block commit failed: {e}")
+
+def broadcast_block_request(block):
+    """Send a request to the Flask API to broadcast the block."""
+    try:
+        response = requests.post(BROADCAST_URL, json={"block": block.to_dict()})
+        if response.status_code == 200:
+            print(f"[INFO] Block {block.block_index} broadcasted successfully.")
+        else:
+            print(f"[WARNING] Broadcast failed: {response.json()}")
+    except requests.exceptions.RequestException as e:
+        print(f"[ERROR] Broadcast request failed: {e}")

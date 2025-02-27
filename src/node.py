@@ -87,8 +87,8 @@ def get_recent_blocks():
     if not recent_blocks:
         return jsonify({"error": "No recent blocks found"}), 400
 
-    return jsonify(recent_blocks), 200
-#    return jsonify([block.to_dict() for block in recent_blocks]), 200
+#    return jsonify(recent_blocks), 200
+    return jsonify([block.to_dict() for block in recent_blocks]), 200
 
 
 @app.route('/vote', methods=['POST'])
@@ -145,14 +145,29 @@ def collect_votes(block):
 
     return votes
 
+@app.route('/broadcast_block', methods=['POST'])
+def broadcast_block():
+    """API endpoint to broadcast a newly added block to all nodes."""
+    data = request.get_json()
+    if not data or 'block' not in data:
+        return jsonify({"error": "Invalid request, 'block' missing"}), 400
 
-def broadcast_block(block):
-    """Broadcast a newly added block to all nodes."""
+    block = data['block']
+    failed_nodes = []
+
     for node in nodes:
         try:
-            requests.post(f"{node}/receive_block", json={"block": block.to_dict()})
-        except:
-            pass
+            response = requests.post(f"{node}/receive_block", json={"block": block})
+            if response.status_code != 200:
+                failed_nodes.append(node)
+        except requests.exceptions.RequestException:
+            failed_nodes.append(node)
+
+    if failed_nodes:
+        return jsonify({"message": "Block broadcasted with some failures", "failed_nodes": list(failed_nodes)}), 207
+    return jsonify({"message": "Block successfully broadcasted to all nodes"}), 200
+
+
 
 
 if __name__ == '__main__':
