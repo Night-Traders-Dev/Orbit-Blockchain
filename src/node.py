@@ -5,7 +5,7 @@ import requests
 import json
 import hashlib
 from flask import Flask, request, jsonify
-from blockchain import init_blockchain, get_latest_block
+from blockchain import init_blockchain, get_latest_block, approve_and_add_block
 from block import Block
 from consensus import verify_poa_proof, validate_block_poa, compute_poa
 import database
@@ -78,24 +78,6 @@ def propose_block():
     else:
         return jsonify({"error": "Block rejected by network"}), 400
 
-
-def approve_and_add_block(new_block, tx_data):
-    """Helper function to add a block to the blockchain with atomicity."""
-    try:
-        with database.db.write_batch() as batch:
-            block_key = f'block_{new_block.block_index}'.encode()
-            batch.put(block_key, json.dumps(new_block.to_dict()).encode())
-            batch.put(b'last_block', str(new_block.block_index).encode())
-
-            for txn in tx_data:
-                tx_key = f'tx_{txn["tx_id"]}'.encode()
-                batch.put(tx_key, json.dumps(txn).encode())
-                batch.put(f'spent_{txn["tx_id"]}'.encode(), b'1')  # Mark spent
-
-        threading.Thread(target=broadcast_block, args=(new_block,)).start()
-        print(f"[INFO] Block {new_block.block_index} committed successfully.")
-    except Exception as e:
-        print(f"[ERROR] Block commit failed: {e}")
 
 
 @app.route('/vote', methods=['POST'])
