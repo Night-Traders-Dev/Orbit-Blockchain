@@ -12,10 +12,8 @@ class Block:
         self.proposer = proposer
 
         from database import get_recent_blocks
-        # Fetch recent blocks for PoA computation
         recent_blocks = get_recent_blocks(limit=5)
 
-        # Import `compute_poa` here to avoid circular import issues
         from consensus import compute_poa
         self.proof_of_accuracy = proof_of_accuracy or compute_poa(recent_blocks)
 

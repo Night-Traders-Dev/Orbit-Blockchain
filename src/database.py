@@ -120,8 +120,9 @@ def get_all_blocks():
         print(f"[ERROR] Failed to retrieve all blocks: {e}")
     return blocks
 
+
 def get_recent_blocks(limit=5):
-    """Retrieve the last N blocks to support Proof of Accuracy (PoA)."""
+    """Retrieve the last N blocks as Block objects to support Proof of Accuracy."""
     if not db:
         print("[ERROR] Database connection not initialized.")
         return []
@@ -135,18 +136,20 @@ def get_recent_blocks(limit=5):
             if block_data:
                 try:
                     block_json = json.loads(block_data.decode())  # Decode bytes to string before parsing
-                    recent_blocks.append(Block(
+                    block = Block(
                         block_index=block_json["block_index"],
                         previous_hash=block_json["previous_hash"],
                         timestamp=block_json["timestamp"],
                         data=block_json["data"],
                         proposer=block_json["proposer"],
                         proof_of_accuracy=block_json.get("proof_of_accuracy", "MISSING_PoA"),
-                    ))
+                    )
+                    recent_blocks.append(block)  # Ensure we return Block objects, not dictionaries
                 except (json.JSONDecodeError, KeyError) as e:
                     print(f"[ERROR] Failed to parse block {i}: {e}")
     except Exception as e:
         print(f"[ERROR] Failed to retrieve recent blocks: {e}")
+
     return recent_blocks
 
 
@@ -178,5 +181,3 @@ def close_db():
         db.close()
         print("[Database] Connection closed.")
 
-# Initialize the database on startup
-init_db()

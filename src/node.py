@@ -7,7 +7,7 @@ import hashlib
 from flask import Flask, request, jsonify
 from blockchain import init_blockchain, get_latest_block, approve_and_add_block
 from block import Block
-from consensus import verify_poa_proof, validate_block_poa, compute_poa
+from consensus import verify_poa_proof, validate_block_poa, compute_poa, generate_poa
 import database
 
 app = Flask(__name__)
@@ -42,7 +42,7 @@ def propose_block():
     data = request.get_json()
     proposer = data.get("proposer")
     tx_data = data.get("data")
-    poa_proof = data.get("poa_proof")  # Proof of Accuracy from proposer
+    poa_proof = data.get("poa_proof")
 
     if not proposer or not isinstance(tx_data, list) or len(tx_data) == 0:
         return jsonify({"error": "Missing or invalid proposer/transaction data"}), 400
@@ -79,6 +79,16 @@ def propose_block():
         return jsonify({"error": "Block rejected by network"}), 400
 
 
+@app.route('/recent_blocks', methods=['GET'])
+def get_recent_blocks():
+    """Return the last 5 blocks for Proof of Accuracy verification."""
+    recent_blocks = database.get_recent_blocks(1)
+
+    if not recent_blocks:
+        return jsonify({"error": "No recent blocks found"}), 400
+
+    return jsonify([block.to_dict() for block in recent_blocks]), 200
+
 
 @app.route('/vote', methods=['POST'])
 def vote():
@@ -91,6 +101,12 @@ def vote():
         return jsonify({"error": "No block data or PoA proof provided"}), 400
 
     last_block = get_latest_block()
+    if last_block is None:
+        return jsonify({"error": "Failed to retrieve latest block"}), 500
+
+    if not all(k in block_data for k in ["previous_hash", "block_index"]):
+        return jsonify({"error": "Invalid block format"}), 400
+
     is_valid = (block_data["previous_hash"] == last_block.hash and
                 block_data["block_index"] == last_block.block_index + 1)
 
@@ -140,6 +156,7 @@ def broadcast_block(block):
 if __name__ == '__main__':
     NODE_PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
     print(f"Starting node on port {NODE_PORT}")
+    database.init_db()
     init_blockchain()
     nodes.add(f"http://localhost:{NODE_PORT}")
     app.run(host="0.0.0.0", port=NODE_PORT)

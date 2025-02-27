@@ -2,6 +2,7 @@ import requests
 import random
 import time
 import threading
+from consensus import generate_poa
 
 # ----------------------------
 # Node Discovery
@@ -11,9 +12,10 @@ def get_active_nodes():
     try:
         response = requests.get("http://localhost:5000/nodes", timeout=5)
         if response.status_code == 200:
-            return response.json()
+            nodes = response.json()
+            return nodes if nodes else ["http://localhost:5000"]
     except requests.RequestException:
-        print("[Warning] No nodes found. Using localhost:5000.")
+        print("[Warning] No active nodes found. Ensure the blockchain node is running.")
     return ["http://localhost:5000"]
 
 NODE_URLS = get_active_nodes()
@@ -21,7 +23,7 @@ NODE_URLS = get_active_nodes()
 # ----------------------------
 # Client Setup
 # ----------------------------
-NUM_CLIENTS = 100
+NUM_CLIENTS = 1
 client_ids = [f"Client{i}" for i in range(1, NUM_CLIENTS + 1)]
 client_ids.append("Genesis")
 
@@ -37,21 +39,14 @@ lock = threading.Lock()
 # Proof of Accuracy Generation
 # ----------------------------
 def fetch_recent_blocks():
-    """Fetch recent blocks to generate Proof of Accuracy."""
+    """Fetch recent blocks for Proof of Accuracy computation."""
     try:
-        response = requests.get("http://localhost:5000/blockchain", timeout=5)
+        response = requests.get("http://localhost:5000/recent_blocks", timeout=5)
         if response.status_code == 200:
-            blocks = response.json()
-            return blocks[-5:]  # Get the last 5 blocks
+            return response.json()  # Ensure this returns a list of block dictionaries
     except requests.RequestException:
-        print("[Warning] Could not fetch blockchain.")
+        print("[Warning] Could not fetch recent blocks.")
     return []
-
-def generate_poa():
-    """Generate Proof of Accuracy from recent blocks."""
-    recent_blocks = fetch_recent_blocks()
-    history_str = ",".join(f"{b['block_index']}:{b['hash']}" for b in recent_blocks)
-    return f"PoA_{hash(history_str)}" if history_str else "PoA_Genesis"
 
 # ----------------------------
 # Transaction Handling
@@ -71,18 +66,19 @@ def propose_transaction(sender, receiver, amount, fee):
         "fee": fee
     }
 
-    proof_of_accuracy = generate_poa()
+    recent_blocks = fetch_recent_blocks()  # Fetch recent blocks for PoA generation
+    proof_of_accuracy = generate_poa(recent_blocks)  # Ensure PoA is generated properly
 
     payload = {
         "proposer": sender,
         "data": [transaction],
-        "poa_proof": proof_of_accuracy
+        "poa_proof": proof_of_accuracy  # Ensure PoA is included
     }
 
     random.shuffle(NODE_URLS)  # Shuffle nodes for load balancing
     for node_url in NODE_URLS:
         try:
-            response = requests.post(f"{node_url}/propose_block", json=payload, timeout=5)
+            response = requests.post(f"http://localhost:5000/propose_block", json=payload, timeout=5)
             if response.status_code == 200:
                 print(f"[{sender}] Transaction successful via {node_url}: {transaction}")
                 return True
@@ -103,12 +99,14 @@ def distribute_genesis_funds():
     with lock:
         genesis_balance = local_balances["Genesis"]
         if genesis_balance <= 0:
+            print("[Genesis] No balance available for distribution.")
             return
 
         receivers = [client for client in client_ids if client != "Genesis"]
         amount_per_client = round(genesis_balance / len(receivers), 2)
 
         if amount_per_client <= 0:
+            print("[Genesis] Insufficient balance to distribute.")
             return
 
         print(f"\n[Genesis Distribution] {genesis_balance:.2f} distributed ({amount_per_client:.2f} per client)")
@@ -116,10 +114,9 @@ def distribute_genesis_funds():
         for client in receivers:
             if propose_transaction("Genesis", client, amount_per_client, 0):
                 local_balances[client] += amount_per_client
+                local_balances["Genesis"] -= amount_per_client  # Deduct distributed funds
             else:
                 print(f"[Genesis] Failed to send funds to {client}.")
-
-        local_balances["Genesis"] = 0
 
 # ----------------------------
 # Transaction Simulation
@@ -164,8 +161,9 @@ def simulate_transaction():
 def transaction_worker():
     """Run transactions in a controlled loop."""
     while True:
-        if not simulate_transaction():
-            print("Terminating transaction simulation.")
+        success = simulate_transaction()
+        if not success:
+            print("Terminating transaction simulation due to insufficient activity.")
             break
         time.sleep(random.uniform(0.1, 0.5))  # Random delay
 
@@ -178,7 +176,7 @@ if __name__ == '__main__':
     for client, bal in local_balances.items():
         print(f"{client}: {bal:.2f}")
 
-    num_threads = 5  # Limit concurrency
+    num_threads = 1
     threads = [threading.Thread(target=transaction_worker) for _ in range(num_threads)]
 
     for t in threads:
