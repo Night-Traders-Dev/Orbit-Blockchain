@@ -37,7 +37,7 @@ lock = threading.Lock()
 # Transaction Handling
 # ----------------------------
 def propose_transaction(sender, receiver, amount, fee):
-    """Propose a transaction to a node."""
+    """Propose a transaction to a node with Proof of Accuracy."""
     if amount <= 0:
         print(f"[{sender}] Invalid transaction: cannot send 0 or negative tokens.")
         return False
@@ -51,9 +51,13 @@ def propose_transaction(sender, receiver, amount, fee):
         "fee": fee
     }
 
+    # Generate a pseudo Proof of Accuracy (PoA)
+    proof_of_accuracy = f"PoA_{tx_id}"
+
     payload = {
         "proposer": sender,
-        "data": [transaction]
+        "data": [transaction],
+        "proof_of_accuracy": proof_of_accuracy
     }
 
     random.shuffle(NODE_URLS)  # Shuffle nodes for load balancing

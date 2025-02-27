@@ -22,8 +22,18 @@ def init_db():
     except Exception as e:
         print(f"[ERROR] Database initialization failed: {e}")
 
+def is_blockchain_empty():
+    """Check if the blockchain database contains any blocks."""
+    try:
+        with db.iterator() as it:
+            first_entry = next(it, None)  # Get the first key-value pair safely
+            return first_entry is None  # Blockchain is empty if no entries exist
+    except Exception as e:
+        print(f"[ERROR] Failed to check if blockchain is empty: {e}")
+        return True  # Assume empty on failure
+
 def insert_block(block):
-    """Insert a new block and its transactions into RocksDB using atomic transactions."""
+    """Insert a new block into RocksDB using atomic transactions."""
     if not db:
         print("[ERROR] Database connection not initialized.")
         return False
@@ -32,14 +42,7 @@ def insert_block(block):
         new_index = last_index + 1
 
         block_key = f'block_{new_index}'.encode()
-        block_data = json.dumps({
-            "block_index": new_index,
-            "previous_hash": block.previous_hash,
-            "timestamp": block.timestamp,
-            "data": block.data,
-            "proposer": block.proposer,
-            "hash": block.hash
-        }).encode()
+        block_data = json.dumps(block.to_dict()).encode()
 
         # Use batch write for atomic operations
         with db.write_batch() as batch:
@@ -50,8 +53,7 @@ def insert_block(block):
             for tx in block.data:
                 if isinstance(tx, dict) and "tx_id" in tx:
                     tx_key = f'tx_{tx["tx_id"]}'.encode()
-                    tx_data = json.dumps(tx).encode()
-                    batch.put(tx_key, tx_data)
+                    batch.put(tx_key, json.dumps(tx).encode())
 
         print(f"[Database] Block {new_index} inserted successfully.")
         return True
@@ -87,6 +89,7 @@ def get_latest_block():
             timestamp=last_block["timestamp"],
             data=last_block["data"],
             proposer=last_block["proposer"],
+            proof_of_accuracy=last_block.get("proof_of_accuracy", "MISSING_PoA"),
             hash=last_block["hash"]
         )
     except KeyError as e:
@@ -113,7 +116,9 @@ def get_all_blocks():
                         previous_hash=block_json["previous_hash"],
                         timestamp=block_json["timestamp"],
                         data=block_json["data"],
-                        proposer=block_json["proposer"]
+                        proposer=block_json["proposer"],
+                        proof_of_accuracy=block_json.get("proof_of_accuracy", "MISSING_PoA"),
+                        hash=block_json["hash"]
                     ))
                 except (json.JSONDecodeError, KeyError) as e:
                     print(f"[ERROR] Failed to parse block {i}: {e}")
@@ -121,71 +126,36 @@ def get_all_blocks():
         print(f"[ERROR] Failed to retrieve all blocks: {e}")
     return blocks
 
-def get_block_count():
-    """Return the total number of blocks in the blockchain."""
-    if not db:
-        print("[ERROR] Database connection not initialized.")
-        return 0
-    try:
-        return int(db.get(b'last_block') or b'0')
-    except Exception as e:
-        print(f"[ERROR] Failed to retrieve block count: {e}")
-        return 0
-
-def get_all_transactions():
-    """Retrieve all transactions from RocksDB."""
+def get_recent_blocks(limit=5):
+    """Retrieve the last N blocks to support Proof of Accuracy (PoA)."""
     if not db:
         print("[ERROR] Database connection not initialized.")
         return []
-    transactions = []
+    recent_blocks = []
     try:
-        for key, value in db.iterator(prefix=b'tx_'):
-            transactions.append(json.loads(value))
-    except Exception as e:
-        print(f"[ERROR] Failed to retrieve transactions: {e}")
-    return transactions
+        last_index_raw = db.get(b'last_block')
+        last_index = int(last_index_raw.decode()) if last_index_raw else 0  # Convert bytes to int safely
 
-def get_last_transactions(limit=5):
-    """Retrieve the last N transactions."""
-    transactions = get_all_transactions()
-    return transactions[-limit:] if len(transactions) >= limit else transactions
-
-def is_transaction_spent(tx_id):
-    """Check if a transaction has already been spent."""
-    if not db:
-        print("[ERROR] Database connection not initialized.")
-        return False
-    try:
-        spent_key = f"spent_{tx_id}".encode('utf-8')
-        spent_status = db.get(spent_key)
-        return spent_status is not None  # If exists, it has been spent
+        start_index = max(1, last_index - limit + 1)  # Get the last `limit` blocks
+        for i in range(start_index, last_index + 1):
+            block_data = db.get(f'block_{i}'.encode())
+            if block_data:
+                try:
+                    block_json = json.loads(block_data.decode())  # Decode bytes to string before parsing
+                    recent_blocks.append(Block(
+                        block_index=block_json["block_index"],
+                        previous_hash=block_json["previous_hash"],
+                        timestamp=block_json["timestamp"],
+                        data=block_json["data"],
+                        proposer=block_json["proposer"],
+                        proof_of_accuracy=block_json.get("proof_of_accuracy", "MISSING_PoA"),
+                        hash=block_json["hash"]
+                    ))
+                except (json.JSONDecodeError, KeyError) as e:
+                    print(f"[ERROR] Failed to parse block {i}: {e}")
     except Exception as e:
-        print(f"[ERROR] Checking spent status failed for {tx_id}: {e}")
-        return False
-
-def mark_transaction_spent(tx_id):
-    """Mark a transaction as spent."""
-    if not db:
-        print("[ERROR] Database connection not initialized.")
-        return
-    try:
-        spent_key = f"spent_{tx_id}".encode('utf-8')
-        db.put(spent_key, b'1')  # Mark as spent with a value of '1'
-        print(f"[Database] Transaction {tx_id} marked as spent.")
-    except Exception as e:
-        print(f"[Database] Error marking transaction {tx_id} as spent: {e}")
-
-def get_transaction(tx_id):
-    """Retrieve a transaction by its ID."""
-    if not db:
-        print("[ERROR] Database connection not initialized.")
-        return None
-    try:
-        tx_data = db.get(f'tx_{tx_id}'.encode())
-        return json.loads(tx_data) if tx_data else None
-    except Exception as e:
-        print(f"[ERROR] Failed to retrieve transaction {tx_id}: {e}")
-        return None
+        print(f"[ERROR] Failed to retrieve recent blocks: {e}")
+    return recent_blocks
 
 def close_db():
     """Close the database connection."""
