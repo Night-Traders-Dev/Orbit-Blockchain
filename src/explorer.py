@@ -4,22 +4,24 @@ import sys
 import time
 
 def get_nodes(node_url):
-    """Fetch known nodes from the given node."""
+    """Fetch known nodes from the given node, ensuring valid response format."""
     url = f"{node_url}/nodes"
     try:
         response = requests.get(url, timeout=5)
+        response.raise_for_status()  # Raise an error for bad status codes
         nodes = response.json()
         if isinstance(nodes, list):
             return nodes
-    except (requests.RequestException, json.JSONDecodeError):
-        pass
+    except (requests.RequestException, json.JSONDecodeError) as e:
+        print(f"[ERROR] Failed to fetch nodes from {node_url}: {e}")
     return [node_url]  # Default to the given node if discovery fails
 
 def fetch_blockchain(node_url):
-    """Fetch blockchain data from the node."""
+    """Fetch blockchain data from the node with proper error handling."""
     url = f"{node_url}/blockchain"
     try:
         response = requests.get(url, timeout=5)
+        response.raise_for_status()
         data = response.json()
 
         if not isinstance(data, list):  # Ensure response is a list of blocks
@@ -28,11 +30,11 @@ def fetch_blockchain(node_url):
 
         return data  # Return list of blocks
     except (requests.RequestException, json.JSONDecodeError) as e:
-        print(f"Error fetching blockchain from {node_url}: {e}")
+        print(f"[ERROR] Failed to fetch blockchain from {node_url}: {e}")
         return None
 
 def view_node_stats(node_url):
-    """Process blockchain stats based on the fetched data."""
+    """Process blockchain stats based on the fetched data with validation."""
     blockchain_data = fetch_blockchain(node_url)
     if not blockchain_data:
         return None
@@ -50,14 +52,14 @@ def view_node_stats(node_url):
             continue
 
         transactions.extend(tx_data)
-        total_amount_sent += sum(float(tx.get("amount", 0)) for tx in tx_data)
-        total_fees_collected += sum(float(tx.get("fee", 0)) for tx in tx_data)
+        total_amount_sent += sum(float(tx.get("amount", 0)) for tx in tx_data if isinstance(tx, dict))
+        total_fees_collected += sum(float(tx.get("fee", 0)) for tx in tx_data if isinstance(tx, dict))
 
     total_transactions = len(transactions)
 
     last_five_tx = [
         f"{tx.get('sender', 'Unknown')} → {tx.get('receiver', 'Unknown')} | {tx.get('amount', 0)} units | Fee: {tx.get('fee', 0)} | TX ID: {tx.get('tx_id', 'N/A')}"
-        for tx in transactions[-5:]
+        for tx in transactions[-5:] if isinstance(tx, dict)
     ]
 
     return {
@@ -73,7 +75,7 @@ if __name__ == '__main__':
     nodes_arg = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:5000"
     initial_nodes = [url.strip() for url in nodes_arg.split(",")]
 
-    print("Starting Block Explorer (updating every 10 seconds)...")
+    print("🚀 Starting Block Explorer (updating every 10 seconds)...")
     try:
         while True:
             all_stats = []
@@ -108,7 +110,7 @@ if __name__ == '__main__':
                     "last_five_transactions": last_five_tx
                 }
 
-                print("\n==== 🛠 Aggregated Block Explorer Stats ====")
+                print("\n==== 🌐 Aggregated Block Explorer Stats ====")
                 print(json.dumps(aggregated_stats, indent=4))
                 print("===========================================\n")
             else:

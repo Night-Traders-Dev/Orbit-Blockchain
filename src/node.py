@@ -12,11 +12,29 @@ nodes = set()  # Store connected nodes
 
 NODE_OPERATOR_ADDRESS = "heoEnsiaowm391"
 
+#@app.route('/nodes', methods=['GET'])
+#def get_nodes():
+#    """Returns the list of known nodes."""
+#    return jsonify(list(nodes)), 200
+
+
 @app.route('/blockchain', methods=['GET'])
 def get_blockchain():
     """Returns the current blockchain from the database."""
-    blocks = database.get_all_blocks()  # Fetch all blocks from DB
-    return jsonify([block.to_dict() for block in blocks]), 200
+    try:
+        # Fetch all blocks from DB
+        blocks = database.get_all_blocks()
+        if not blocks:
+            # Return a message if no blocks are found in the database
+            return jsonify({"message": "No blocks found in the blockchain."}), 404
+
+        # Convert blocks to dictionary format for JSON response
+        blockchain_data = [block.to_dict() for block in blocks]
+        return jsonify(blockchain_data), 200
+    except Exception as e:
+        # Handle unexpected errors and log them
+        print(f"[ERROR] Failed to fetch blockchain: {e}")
+        return jsonify({"error": "Internal server error, could not fetch blockchain."}), 500
 
 @app.route('/propose_block', methods=['POST'])
 def propose_block():
