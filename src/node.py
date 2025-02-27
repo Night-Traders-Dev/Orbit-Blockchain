@@ -12,10 +12,10 @@ nodes = set()  # Store connected nodes
 
 NODE_OPERATOR_ADDRESS = "heoEnsiaowm391"
 
-#@app.route('/nodes', methods=['GET'])
-#def get_nodes():
-#    """Returns the list of known nodes."""
-#    return jsonify(list(nodes)), 200
+@app.route('/nodes', methods=['GET'])
+def get_nodes():
+    """Returns the list of known nodes."""
+    return jsonify(list(nodes)), 200
 
 
 @app.route('/blockchain', methods=['GET'])
@@ -173,4 +173,5 @@ if __name__ == '__main__':
     NODE_PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
     print(f"Starting node on port {NODE_PORT}")
     init_blockchain()
+    nodes.add(f"http://localhost:{NODE_PORT}")
     app.run(host="0.0.0.0", port=NODE_PORT)
