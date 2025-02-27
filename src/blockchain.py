@@ -23,12 +23,20 @@ def init_blockchain():
         print("[INFO] Blockchain already exists.")
 
 def get_latest_block():
-    """Retrieve the latest block from the blockchain."""
-    latest_block = database.get_latest_block()
-    if not latest_block:
+    """Retrieve the latest block from the blockchain as a Block object."""
+    latest_block_data = database.get_latest_block()
+    if not latest_block_data:
         print("[ERROR] No blocks found in the blockchain.")
         return None  # Return None if no block exists
-    return latest_block  # Now includes PoA validation
+    
+    return Block(
+        block_index=latest_block_data["block_index"],
+        previous_hash=latest_block_data["previous_hash"],
+        timestamp=latest_block_data["timestamp"],
+        data=latest_block_data["data"],
+        proposer=latest_block_data["proposer"],
+        proof_of_accuracy=latest_block_data["proof_of_accuracy"]
+    )
 
 def get_blockchain():
     """Retrieve the full blockchain from the database."""
@@ -37,7 +45,7 @@ def get_blockchain():
 def get_blockchain_stats():
     """Retrieve blockchain statistics for the explorer."""
     total_blocks = database.get_block_count()
-    
+
     # Retrieve transactions only once (optimization)
     transactions = database.get_all_transactions()
     total_transactions = len(transactions)

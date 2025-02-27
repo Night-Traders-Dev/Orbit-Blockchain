@@ -34,6 +34,26 @@ block_count = 0
 lock = threading.Lock()
 
 # ----------------------------
+# Proof of Accuracy Generation
+# ----------------------------
+def fetch_recent_blocks():
+    """Fetch recent blocks to generate Proof of Accuracy."""
+    try:
+        response = requests.get("http://localhost:5000/blockchain", timeout=5)
+        if response.status_code == 200:
+            blocks = response.json()
+            return blocks[-5:]  # Get the last 5 blocks
+    except requests.RequestException:
+        print("[Warning] Could not fetch blockchain.")
+    return []
+
+def generate_poa():
+    """Generate Proof of Accuracy from recent blocks."""
+    recent_blocks = fetch_recent_blocks()
+    history_str = ",".join(f"{b['block_index']}:{b['hash']}" for b in recent_blocks)
+    return f"PoA_{hash(history_str)}" if history_str else "PoA_Genesis"
+
+# ----------------------------
 # Transaction Handling
 # ----------------------------
 def propose_transaction(sender, receiver, amount, fee):
@@ -51,13 +71,12 @@ def propose_transaction(sender, receiver, amount, fee):
         "fee": fee
     }
 
-    # Generate a pseudo Proof of Accuracy (PoA)
-    proof_of_accuracy = f"PoA_{tx_id}"
+    proof_of_accuracy = generate_poa()
 
     payload = {
         "proposer": sender,
         "data": [transaction],
-        "proof_of_accuracy": proof_of_accuracy
+        "poa_proof": proof_of_accuracy
     }
 
     random.shuffle(NODE_URLS)  # Shuffle nodes for load balancing

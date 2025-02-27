@@ -24,10 +24,11 @@ def init_db():
 
 def is_blockchain_empty():
     """Check if the blockchain database contains any blocks."""
+    if not db:
+        print("[ERROR] Database connection not initialized.")
+        return True
     try:
-        with db.iterator() as it:
-            first_entry = next(it, None)  # Get the first key-value pair safely
-            return first_entry is None  # Blockchain is empty if no entries exist
+        return db.get(b'last_block') == b'0'
     except Exception as e:
         print(f"[ERROR] Failed to check if blockchain is empty: {e}")
         return True  # Assume empty on failure
@@ -77,7 +78,7 @@ def get_last_block():
         return None
 
 def get_latest_block():
-    """Retrieve the latest block from the blockchain."""
+    """Retrieve the latest block from the blockchain as a Block object."""
     last_block = get_last_block()
     if not last_block:
         print("[ERROR] No blocks found in the blockchain.")
@@ -90,7 +91,6 @@ def get_latest_block():
             data=last_block["data"],
             proposer=last_block["proposer"],
             proof_of_accuracy=last_block.get("proof_of_accuracy", "MISSING_PoA"),
-            hash=last_block["hash"]
         )
     except KeyError as e:
         print(f"[ERROR] Missing key {e} in the latest block data.")
@@ -103,8 +103,7 @@ def get_all_blocks():
         return []
     blocks = []
     try:
-        last_index_raw = db.get(b'last_block')
-        last_index = int(last_index_raw.decode()) if last_index_raw else 0  # Convert bytes to int safely
+        last_index = int(db.get(b'last_block') or b'0')
 
         for i in range(1, last_index + 1):
             block_data = db.get(f'block_{i}'.encode())
@@ -118,7 +117,6 @@ def get_all_blocks():
                         data=block_json["data"],
                         proposer=block_json["proposer"],
                         proof_of_accuracy=block_json.get("proof_of_accuracy", "MISSING_PoA"),
-                        hash=block_json["hash"]
                     ))
                 except (json.JSONDecodeError, KeyError) as e:
                     print(f"[ERROR] Failed to parse block {i}: {e}")
@@ -133,10 +131,9 @@ def get_recent_blocks(limit=5):
         return []
     recent_blocks = []
     try:
-        last_index_raw = db.get(b'last_block')
-        last_index = int(last_index_raw.decode()) if last_index_raw else 0  # Convert bytes to int safely
-
+        last_index = int(db.get(b'last_block') or b'0')
         start_index = max(1, last_index - limit + 1)  # Get the last `limit` blocks
+
         for i in range(start_index, last_index + 1):
             block_data = db.get(f'block_{i}'.encode())
             if block_data:
@@ -149,13 +146,35 @@ def get_recent_blocks(limit=5):
                         data=block_json["data"],
                         proposer=block_json["proposer"],
                         proof_of_accuracy=block_json.get("proof_of_accuracy", "MISSING_PoA"),
-                        hash=block_json["hash"]
                     ))
                 except (json.JSONDecodeError, KeyError) as e:
                     print(f"[ERROR] Failed to parse block {i}: {e}")
     except Exception as e:
         print(f"[ERROR] Failed to retrieve recent blocks: {e}")
     return recent_blocks
+
+
+def is_transaction_spent(tx_id):
+    """Check if a transaction has already been spent (UTXO tracking)."""
+    spent_transactions = db.get(b"spent_transactions")
+    if spent_transactions:
+        spent_transactions = json.loads(spent_transactions.decode("utf-8"))
+    else:
+        spent_transactions = set()
+
+    return tx_id in spent_transactions
+
+
+def mark_transaction_as_spent(tx_id):
+    """Mark a transaction as spent."""
+    spent_transactions = db.get(b"spent_transactions")
+    if spent_transactions:
+        spent_transactions = json.loads(spent_transactions.decode("utf-8"))
+    else:
+        spent_transactions = set()
+
+    spent_transactions.add(tx_id)
+    db.put(b"spent_transactions", json.dumps(list(spent_transactions)).encode("utf-8"))
 
 def close_db():
     """Close the database connection."""
