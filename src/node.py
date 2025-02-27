@@ -11,7 +11,7 @@ from consensus import verify_poa_proof, validate_block_poa, compute_poa, generat
 import database
 
 app = Flask(__name__)
-nodes = set()  # Store connected nodes
+nodes = set()
 
 NODE_OPERATOR_ADDRESS = "heoEnsiaowm391"
 
@@ -87,7 +87,8 @@ def get_recent_blocks():
     if not recent_blocks:
         return jsonify({"error": "No recent blocks found"}), 400
 
-    return jsonify([block.to_dict() for block in recent_blocks]), 200
+    return jsonify(recent_blocks), 200
+#    return jsonify([block.to_dict() for block in recent_blocks]), 200
 
 
 @app.route('/vote', methods=['POST'])
@@ -117,6 +118,7 @@ def vote():
 
 
 def collect_votes(block):
+    return [True]
     """Ask nodes to vote, retrying failed ones with exponential backoff."""
     if not nodes:
         print("[INFO] No nodes available. Auto-approving block.")
