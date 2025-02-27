@@ -1,3 +1,4 @@
+import hashlib
 import database
 
 def verify_poa_proof(poa_proof):
@@ -6,14 +7,27 @@ def verify_poa_proof(poa_proof):
         print("[INFO] No previous transactions. Accepting genesis block.")
         return True
 
+    if not isinstance(poa_proof, list):
+        print("[ERROR] Invalid PoA format. Expected a list.")
+        return False
+
     for proof in poa_proof:
+        if not isinstance(proof, dict):  
+            print(f"[ERROR] Invalid proof format: {proof}")
+            return False  # Ensure each proof is a dictionary
+
         tx_id = proof.get("tx_id")
+        if not tx_id:
+            print("[ERROR] PoA proof missing 'tx_id'.")
+            return False
+        
         original_tx = database.get_transaction(tx_id)
 
         if not original_tx or original_tx != proof["transaction"]:
             return False  # Invalid proof
 
     return True  # Valid proof
+
 
 def validate_block_poa(block_data):
     """Validate Proof of Accuracy (PoA) for a received block."""
@@ -28,7 +42,7 @@ def validate_block_poa(block_data):
         return True  # If no history, assume first few blocks bootstrap the chain
 
     # Compute expected PoA based on historical blocks
-    expected_poa = hash(",".join(str(b.hash) for b in history))
+    expected_poa = compute_poa(history)
     is_valid = (poa == expected_poa)
 
     if not is_valid:
@@ -38,5 +52,5 @@ def validate_block_poa(block_data):
 
 def compute_poa(history):
     """Generate deterministic PoA hash from recent block history."""
-    history_str = ",".join(f"{b.block_index}:{b.hash}" for b in sorted(history, key=lambda x: x.block_index))
+    history_str = ",".join(b.hash for b in sorted(history, key=lambda x: x.block_index))
     return hashlib.sha256(history_str.encode()).hexdigest()

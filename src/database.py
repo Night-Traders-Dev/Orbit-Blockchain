@@ -78,23 +78,19 @@ def get_last_block():
         return None
 
 def get_latest_block():
-    """Retrieve the latest block from the blockchain as a Block object."""
-    last_block = get_last_block()
-    if not last_block:
+    """Retrieve the latest block data as a dictionary from the database."""
+    last_block_index = db.get(b'last_block')
+    if not last_block_index:
         print("[ERROR] No blocks found in the blockchain.")
-        return None  # Return None if no block exists
-    try:
-        return Block(
-            block_index=last_block["block_index"],
-            previous_hash=last_block["previous_hash"],
-            timestamp=last_block["timestamp"],
-            data=last_block["data"],
-            proposer=last_block["proposer"],
-            proof_of_accuracy=last_block.get("proof_of_accuracy", "MISSING_PoA"),
-        )
-    except KeyError as e:
-        print(f"[ERROR] Missing key {e} in the latest block data.")
-        return None
+        return None  
+
+    block_key = f'block_{last_block_index.decode()}'.encode()
+    block_data = db.get(block_key)
+
+    if block_data:
+        return json.loads(block_data.decode())  # Ensure it returns a dictionary
+    return None
+
 
 def get_all_blocks():
     """Retrieve all blocks from RocksDB."""

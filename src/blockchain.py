@@ -1,10 +1,12 @@
 import time
 import json
-from block import Block
-import database
+import threading
 
 def init_blockchain():
     """Initialize blockchain and ensure the first block exists."""
+    from block import Block  # Local import to prevent circular dependency
+    import database  # Local import to avoid premature database loading
+
     if database.is_blockchain_empty():
         print("[INFO] No existing blockchain found. Initializing genesis block...")
         genesis_block = Block(
@@ -24,11 +26,14 @@ def init_blockchain():
 
 def get_latest_block():
     """Retrieve the latest block from the blockchain as a Block object."""
+    from block import Block  # Local import to prevent circular dependency
+    import database  # Avoid circular import with database
+
     latest_block_data = database.get_latest_block()
     if not latest_block_data:
         print("[ERROR] No blocks found in the blockchain.")
         return None  # Return None if no block exists
-    
+
     return Block(
         block_index=latest_block_data["block_index"],
         previous_hash=latest_block_data["previous_hash"],
@@ -40,10 +45,13 @@ def get_latest_block():
 
 def get_blockchain():
     """Retrieve the full blockchain from the database."""
+    import database
     return database.get_all_blocks()
 
 def get_blockchain_stats():
     """Retrieve blockchain statistics for the explorer."""
+    import database
+
     total_blocks = database.get_block_count()
 
     # Retrieve transactions only once (optimization)
@@ -67,6 +75,8 @@ def get_blockchain_stats():
 
 def approve_and_add_block(new_block, tx_data):
     """Helper function to add a block to the blockchain with atomicity."""
+    import database  # Prevent circular import
+
     try:
         with database.db.write_batch() as batch:
             block_key = f'block_{new_block.block_index}'.encode()
