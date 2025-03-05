@@ -1,16 +1,14 @@
+import asyncio
 import time
-import json
-import threading
-import requests
+import aiohttp  # Async HTTP requests
+from block import Block  # Local import to prevent circular dependency
+import database  # Import database for async calls
 
 BROADCAST_URL = "http://localhost:5000/broadcast_block"
 
-def init_blockchain():
+async def init_blockchain():
     """Initialize blockchain and ensure the first block exists."""
-    from block import Block  # Local import to prevent circular dependency
-    import database  # Local import to avoid premature database loading
-
-    if database.is_blockchain_empty():
+    if await database.is_blockchain_empty():
         print("[INFO] No existing blockchain found. Initializing genesis block...")
         genesis_block = Block(
             block_index=0,
@@ -20,19 +18,16 @@ def init_blockchain():
             proposer="GENESIS",
             proof_of_accuracy="GENESIS_PoA"
         )
-        if database.insert_block(genesis_block):
+        if await database.insert_block(genesis_block):
             print(f"[INFO] Genesis Block Created: {genesis_block.to_dict()}")
         else:
             print("[ERROR] Failed to insert Genesis block.")
     else:
         print("[INFO] Blockchain already exists.")
 
-def get_latest_block():
+async def get_latest_block():
     """Retrieve the latest block from the blockchain as a Block object."""
-    from block import Block  # Local import to prevent circular dependency
-    import database  # Avoid circular import with database
-
-    latest_block_data = database.get_latest_block()
+    latest_block_data = await database.get_last_block()
     if not latest_block_data:
         print("[ERROR] No blocks found in the blockchain.")
         return None  # Return None if no block exists
@@ -46,28 +41,19 @@ def get_latest_block():
         proof_of_accuracy=latest_block_data["proof_of_accuracy"]
     )
 
-def get_blockchain():
+async def get_blockchain():
     """Retrieve the full blockchain from the database."""
-    import database
-    return database.get_all_blocks()
+    return await database.get_all_blocks()
 
-def get_blockchain_stats():
+async def get_blockchain_stats():
     """Retrieve blockchain statistics for the explorer."""
-    import database
-
-    total_blocks = database.get_block_count()
-
-    # Retrieve transactions only once (optimization)
-    transactions = database.get_all_transactions()
+    total_blocks = await database.get_block_count()
+    transactions = await database.get_all_transactions()
     total_transactions = len(transactions)
-
-    # Calculate total sent & fees collected safely
     total_amount_sent = sum(float(tx.get("amount", 0)) for tx in transactions)
     total_fees_collected = sum(float(tx.get("fee", 0)) for tx in transactions)
-
-    # Get the last 5 transactions safely
     last_five_tx = transactions[-5:] if total_transactions >= 5 else transactions
-
+    
     return {
         "total_blocks": total_blocks,
         "total_transactions": total_transactions,
@@ -76,36 +62,28 @@ def get_blockchain_stats():
         "last_transactions": last_five_tx
     }
 
-
-
-def approve_and_add_block(new_block, tx_data):
-    """Helper function to add a block to the blockchain with atomicity."""
-    import database  # Prevent circular import
-
+async def approve_and_add_block(new_block, tx_data):
+    """Add a block to the blockchain with atomicity."""
     try:
-        with database.db.write_batch() as batch:
-            block_key = f'block_{new_block.block_index}'.encode()
-            batch.put(block_key, json.dumps(new_block.to_dict()).encode())
-            batch.put(b'last_block', str(new_block.block_index).encode())
-
+        success = await database.insert_block(new_block)
+        if success:
             for txn in tx_data:
-                tx_key = f'tx_{txn["tx_id"]}'.encode()
-                batch.put(tx_key, json.dumps(txn).encode())
-                batch.put(f'spent_{txn["tx_id"]}'.encode(), b'1')  # Mark spent
-
-        # Start broadcasting in a separate thread
-        threading.Thread(target=broadcast_block_request, args=(new_block,)).start()
-        print(f"[INFO] Block {new_block.block_index} committed successfully.")
+                await database.mark_transaction_as_spent(txn["tx_id"])
+            asyncio.create_task(broadcast_block_request(new_block))  # Async broadcast
+            print(f"[INFO] Block {new_block.block_index} committed successfully.")
+        else:
+            print("[ERROR] Block commit failed.")
     except Exception as e:
         print(f"[ERROR] Block commit failed: {e}")
 
-def broadcast_block_request(block):
+async def broadcast_block_request(block):
     """Send a request to the Flask API to broadcast the block."""
     try:
-        response = requests.post(BROADCAST_URL, json={"block": block.to_dict()})
-        if response.status_code == 200:
-            print(f"[INFO] Block {block.block_index} broadcasted successfully.")
-        else:
-            print(f"[WARNING] Broadcast failed: {response.json()}")
-    except requests.exceptions.RequestException as e:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(BROADCAST_URL, json={"block": block.to_dict()}) as response:
+                if response.status == 200:
+                    print(f"[INFO] Block {block.block_index} broadcasted successfully.")
+                else:
+                    print(f"[WARNING] Broadcast failed: {await response.text()}")
+    except Exception as e:
         print(f"[ERROR] Broadcast request failed: {e}")

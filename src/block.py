@@ -1,7 +1,8 @@
-import time
 import hashlib
 import json
+import asyncio
 from typing import Optional
+
 
 class Block:
     def __init__(self, block_index: int, previous_hash: str, timestamp: float, data: list, proposer: str, proof_of_accuracy: Optional[str] = None):
@@ -10,13 +11,16 @@ class Block:
         self.timestamp = timestamp
         self.data = data
         self.proposer = proposer
+        self.proof_of_accuracy = proof_of_accuracy
+        self.hash = None
 
+    async def initialize(self):
+        """Asynchronously initialize PoA and hash."""
         from database import get_recent_blocks
-        recent_blocks = get_recent_blocks(limit=5)
-
         from consensus import compute_poa
-        self.proof_of_accuracy = proof_of_accuracy or compute_poa(recent_blocks)
-
+        if self.proof_of_accuracy is None:
+            recent_blocks = await get_recent_blocks(limit=5)
+            self.proof_of_accuracy = await compute_poa(recent_blocks)
         self.hash = self.calculate_hash()
 
     def calculate_hash(self) -> str:

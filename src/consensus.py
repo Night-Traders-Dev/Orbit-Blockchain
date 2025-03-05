@@ -1,21 +1,21 @@
+import asyncio
 import hashlib
 import database
-import json
 
-def generate_poa(recent_blocks):
+async def generate_poa(recent_blocks):
     """Generate Proof of Accuracy (PoA) from recent blocks."""
     if not recent_blocks:
         return [{"tx_id": "GENESIS", "transaction": "GENESIS_PoA"}]
 
     poa_proof = []
-
     for block in recent_blocks:
         for tx in block.get("data", []):  # Ensure transactions exist
-            if isinstance(tx, dict) and "tx_id" in tx:                                                               poa_proof.append({"tx_id": tx["tx_id"], "transaction": tx})
+            if isinstance(tx, dict) and "tx_id" in tx:
+                poa_proof.append({"tx_id": tx["tx_id"], "transaction": tx})
 
     return poa_proof
 
-def verify_poa_proof(poa_proof):
+async def verify_poa_proof(poa_proof):
     """Verify the Proof of Accuracy from proposer."""
     if not isinstance(poa_proof, list):
         print("[ERROR] PoA proof is not a list.")
@@ -28,18 +28,18 @@ def verify_poa_proof(poa_proof):
 
     return True
 
-def validate_block_poa(block_data):
+async def validate_block_poa(block_data):
     """Validate Proof of Accuracy (PoA) for a received block."""
     poa = block_data.get("proof_of_accuracy")
     if not poa:
         print("[ERROR] Block missing Proof of Accuracy.")
         return False
 
-    history = database.get_recent_blocks(limit=5)  # Get last 5 blocks
+    history = await database.get_recent_blocks(limit=5)  # Get last 5 blocks
     if not history:
         return True  # If no history, assume first few blocks bootstrap the chain
 
-    expected_poa = compute_poa(history)
+    expected_poa = await compute_poa(history)
     is_valid = (poa == expected_poa)
 
     if not is_valid:
@@ -47,7 +47,7 @@ def validate_block_poa(block_data):
 
     return is_valid
 
-def compute_poa(history):
+async def compute_poa(history):
     """Generate deterministic PoA hash from recent block history."""
     try:
         # Ensure history is sorted based on 'block_index' key

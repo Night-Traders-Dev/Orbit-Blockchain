@@ -1,65 +1,91 @@
 import json
-import plyvel
-#import rocksdb
+import libsql_client
 from block import Block
 
-#options = rocksdb.Options()
-#options.create_if_missing = True
-#options.error_if_exists = False
-#options.set_lock_file_num = 1
 DB_PATH = "blockchain.db"
 
-# Open RocksDB connection
-try:
-    db = plyvel.DB(DB_PATH, create_if_missing=True)
-except Exception as e:
-    print(f"[ERROR] Failed to open database: {e}")
-    db = None  # Prevent crashes if DB fails
+async def connect_db():
+    """Connect to the local Turso (libSQL) database."""
+    try:
+#        async with libsql_client.create_client(f"file:{DB_PATH}") as client:
+        client = libsql_client.create_client(f"file:{DB_PATH}")
+        return client
+    except Exception as e:
+        print(f"[ERROR] Failed to connect to Turso: {e}")
+        client = None  # Prevent crashes if DB fails
+        return client
 
-def init_db():
-    """Initialize the database by setting up necessary keys."""
-    if not db:
+async def init_db():
+    global client
+    client = await connect_db()
+    """Initialize the database schema if it does not exist."""
+    if not client:
         print("[ERROR] Database connection not initialized.")
         return
+    
     try:
-        if db.get(b'last_block') is None:
-            db.put(b'last_block', b'0')  # Start from block index 0
+        await client.execute("""
+            CREATE TABLE IF NOT EXISTS blockchain (
+                block_index INTEGER PRIMARY KEY,
+                previous_hash TEXT,
+                timestamp INTEGER,
+                data TEXT,
+                proposer TEXT,
+                proof_of_accuracy TEXT
+            )
+        """)
+        await client.execute("""
+            CREATE TABLE IF NOT EXISTS metadata (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        await client.execute("""
+            CREATE TABLE IF NOT EXISTS transactions (
+                tx_id TEXT PRIMARY KEY,
+                data TEXT
+            )
+        """)
+
+        # Ensure last_block is tracked
+        await client.execute("INSERT OR IGNORE INTO metadata (key, value) VALUES ('last_block', '0')")
+        print("[Database] Initialization complete.")
     except Exception as e:
         print(f"[ERROR] Database initialization failed: {e}")
 
-def is_blockchain_empty():
+async def is_blockchain_empty():
     """Check if the blockchain database contains any blocks."""
-    if not db:
-        print("[ERROR] Database connection not initialized.")
-        return True
     try:
-        return db.get(b'last_block') == b'0'
+        result = await client.execute("SELECT value FROM metadata WHERE key = 'last_block'")
+        last_block = result.rows[0][0] if result.rows else '0'
+        return last_block == '0'
     except Exception as e:
         print(f"[ERROR] Failed to check if blockchain is empty: {e}")
-        return True  # Assume empty on failure
+        return True
 
-def insert_block(block):
-    """Insert a new block into RocksDB using atomic transactions."""
-    if not db:
-        print("[ERROR] Database connection not initialized.")
-        return False
+async def insert_block(block):
+    """Insert a new block into Turso using transactions."""
     try:
-        last_index = int(db.get(b'last_block') or b'0')
+        result = await client.execute("SELECT value FROM metadata WHERE key = 'last_block'")
+        last_index = int(result.rows[0][0]) if result.rows else 0
         new_index = last_index + 1
 
-        block_key = f'block_{new_index}'.encode()
-        block_data = json.dumps(block.to_dict()).encode()
+        await client.execute("""
+            INSERT INTO blockchain (block_index, previous_hash, timestamp, data, proposer, proof_of_accuracy)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            new_index, block.previous_hash, block.timestamp, json.dumps(block.data), 
+            block.proposer, block.proof_of_accuracy
+        ))
 
-        # Use batch write for atomic operations
-        with db.write_batch() as batch:
-            batch.put(block_key, block_data)
-            batch.put(b'last_block', str(new_index).encode())  # Update last block index
+        # Update last_block metadata
+        await client.execute("UPDATE metadata SET value = ? WHERE key = 'last_block'", (str(new_index),))
 
-            # Store each transaction separately
-            for tx in block.data:
-                if isinstance(tx, dict) and "tx_id" in tx:
-                    tx_key = f'tx_{tx["tx_id"]}'.encode()
-                    batch.put(tx_key, json.dumps(tx).encode())
+        # Store transactions separately
+        for tx in block.data:
+            if isinstance(tx, dict) and "tx_id" in tx:
+                await client.execute("INSERT INTO transactions (tx_id, data) VALUES (?, ?)", 
+                                     (tx["tx_id"], json.dumps(tx)))
 
         print(f"[Database] Block {new_index} inserted successfully.")
         return True
@@ -67,122 +93,84 @@ def insert_block(block):
         print(f"[ERROR] Failed to insert block: {e}")
         return False
 
-def get_last_block():
+async def get_last_block():
     """Retrieve the last block in the blockchain."""
-    if not db:
-        print("[ERROR] Database connection not initialized.")
-        return None
     try:
-        last_index = int(db.get(b'last_block') or b'0')
+        result = await client.execute("SELECT value FROM metadata WHERE key = 'last_block'")
+        last_index = int(result.rows[0][0]) if result.rows else 0
         if last_index == 0:
-            return None  # No blocks yet
-        block_data = db.get(f'block_{last_index}'.encode())
-        return json.loads(block_data) if block_data else None
+            return None
+
+        result = await client.execute("SELECT * FROM blockchain WHERE block_index = ?", (last_index,))
+        block_data = result.rows[0] if result.rows else None
+        return {
+            "block_index": block_data[0],
+            "previous_hash": block_data[1],
+            "timestamp": block_data[2],
+            "data": json.loads(block_data[3]),
+            "proposer": block_data[4],
+            "proof_of_accuracy": block_data[5],
+        } if block_data else None
     except Exception as e:
         print(f"[ERROR] Failed to retrieve last block: {e}")
         return None
 
-def get_latest_block():
-    """Retrieve the latest block data as a dictionary from the database."""
-    last_block_index = db.get(b'last_block')
-    if not last_block_index:
-        print("[ERROR] No blocks found in the blockchain.")
-        return None  
-
-    block_key = f'block_{last_block_index.decode()}'.encode()
-    block_data = db.get(block_key)
-
-    if block_data:
-        return json.loads(block_data.decode())  # Ensure it returns a dictionary
-    return None
-
-
-def get_all_blocks():
-    """Retrieve all blocks from RocksDB."""
-    if not db:
-        print("[ERROR] Database connection not initialized.")
-        return []
-    blocks = []
+async def get_all_blocks():
+    """Retrieve all blocks from Turso."""
     try:
-        last_index = int(db.get(b'last_block') or b'0')
-
-        for i in range(1, last_index + 1):
-            block_data = db.get(f'block_{i}'.encode())
-            if block_data:
-                try:
-                    block_json = json.loads(block_data.decode())  # Decode bytes to string before parsing
-                    blocks.append(Block(
-                        block_index=block_json["block_index"],
-                        previous_hash=block_json["previous_hash"],
-                        timestamp=block_json["timestamp"],
-                        data=block_json["data"],
-                        proposer=block_json["proposer"],
-                        proof_of_accuracy=block_json.get("proof_of_accuracy", "MISSING_PoA"),
-                    ))
-                except (json.JSONDecodeError, KeyError) as e:
-                    print(f"[ERROR] Failed to parse block {i}: {e}")
+        result = await client.execute("SELECT * FROM blockchain ORDER BY block_index ASC")
+        blocks = [
+            Block(
+                block_index=row[0],
+                previous_hash=row[1],
+                timestamp=row[2],
+                data=json.loads(row[3]),
+                proposer=row[4],
+                proof_of_accuracy=row[5],
+            ) for row in result.rows
+        ]
+        return blocks
     except Exception as e:
         print(f"[ERROR] Failed to retrieve all blocks: {e}")
-    return blocks
-
-
-def get_recent_blocks(limit=5):
-    """Retrieve the last N blocks as Block objects to support Proof of Accuracy."""
-    if not db:
-        print("[ERROR] Database connection not initialized.")
         return []
-    recent_blocks = []
-    try:
-        last_index = int(db.get(b'last_block') or b'0')
-        start_index = max(1, last_index - limit + 1)  # Get the last `limit` blocks
 
-        for i in range(start_index, last_index + 1):
-            block_data = db.get(f'block_{i}'.encode())
-            if block_data:
-                try:
-                    block_json = json.loads(block_data.decode())  # Decode bytes to string before parsing
-                    block = Block(
-                        block_index=block_json["block_index"],
-                        previous_hash=block_json["previous_hash"],
-                        timestamp=block_json["timestamp"],
-                        data=block_json["data"],
-                        proposer=block_json["proposer"],
-                        proof_of_accuracy=block_json.get("proof_of_accuracy", "MISSING_PoA"),
-                    )
-                    recent_blocks.append(block)  # Ensure we return Block objects, not dictionaries
-                except (json.JSONDecodeError, KeyError) as e:
-                    print(f"[ERROR] Failed to parse block {i}: {e}")
+async def get_recent_blocks(limit=5):
+    """Retrieve the last N blocks."""
+    try:
+        result = await client.execute("SELECT * FROM blockchain ORDER BY block_index DESC LIMIT ?", (limit,))
+        recent_blocks = [
+            Block(
+                block_index=row[0],
+                previous_hash=row[1],
+                timestamp=row[2],
+                data=json.loads(row[3]),
+                proposer=row[4],
+                proof_of_accuracy=row[5],
+            ) for row in result.rows
+        ]
+        return recent_blocks
     except Exception as e:
         print(f"[ERROR] Failed to retrieve recent blocks: {e}")
+        return []
 
-    return recent_blocks
-
-
-def is_transaction_spent(tx_id):
+async def is_transaction_spent(tx_id):
     """Check if a transaction has already been spent (UTXO tracking)."""
-    spent_transactions = db.get(b"spent_transactions")
-    if spent_transactions:
-        spent_transactions = json.loads(spent_transactions.decode("utf-8"))
-    else:
-        spent_transactions = set()
+    try:
+        result = await client.execute("SELECT COUNT(*) FROM transactions WHERE tx_id = ?", (tx_id,))
+        return result.rows[0][0] > 0
+    except Exception as e:
+        print(f"[ERROR] Failed to check transaction: {e}")
+        return False
 
-    return tx_id in spent_transactions
-
-
-def mark_transaction_as_spent(tx_id):
+async def mark_transaction_as_spent(tx_id):
     """Mark a transaction as spent."""
-    spent_transactions = db.get(b"spent_transactions")
-    if spent_transactions:
-        spent_transactions = json.loads(spent_transactions.decode("utf-8"))
-    else:
-        spent_transactions = set()
+    try:
+        await client.execute("INSERT OR IGNORE INTO transactions (tx_id, data) VALUES (?, '{}')", (tx_id,))
+    except Exception as e:
+        print(f"[ERROR] Failed to mark transaction as spent: {e}")
 
-    spent_transactions.add(tx_id)
-    db.put(b"spent_transactions", json.dumps(list(spent_transactions)).encode("utf-8"))
-
-def close_db():
+async def close_db():
     """Close the database connection."""
-    if db:
-        db.close()
+    if client:
+        await client.close()
         print("[Database] Connection closed.")
-
