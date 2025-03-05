@@ -7,12 +7,11 @@ DB_PATH = "blockchain.db"
 async def connect_db():
     """Connect to the local Turso (libSQL) database."""
     try:
-#        async with libsql_client.create_client(f"file:{DB_PATH}") as client:
         client = libsql_client.create_client(f"file:{DB_PATH}")
         return client
     except Exception as e:
         print(f"[ERROR] Failed to connect to Turso: {e}")
-        client = None  # Prevent crashes if DB fails
+        client = None
         return client
 
 async def init_db():
@@ -78,10 +77,8 @@ async def insert_block(block):
             block.proposer, block.proof_of_accuracy
         ))
 
-        # Update last_block metadata
         await client.execute("UPDATE metadata SET value = ? WHERE key = 'last_block'", (str(new_index),))
 
-        # Store transactions separately
         for tx in block.data:
             if isinstance(tx, dict) and "tx_id" in tx:
                 await client.execute("INSERT INTO transactions (tx_id, data) VALUES (?, ?)", 

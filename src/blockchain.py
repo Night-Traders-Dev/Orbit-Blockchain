@@ -1,8 +1,8 @@
 import asyncio
 import time
-import aiohttp  # Async HTTP requests
-from block import Block  # Local import to prevent circular dependency
-import database  # Import database for async calls
+import aiohttp
+from block import Block
+import database
 
 BROADCAST_URL = "http://localhost:5000/broadcast_block"
 

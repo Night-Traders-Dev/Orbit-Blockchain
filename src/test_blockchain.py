@@ -1,6 +1,5 @@
 import asyncio
 import aiohttp
-import time
 import random
 import string
 

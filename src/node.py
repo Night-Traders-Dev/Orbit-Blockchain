@@ -5,7 +5,7 @@ import aiohttp
 from flask import Flask, request, jsonify
 from blockchain import init_blockchain, get_latest_block, approve_and_add_block
 from block import Block
-from consensus import verify_poa_proof, validate_block_poa, compute_poa, generate_poa
+from consensus import verify_poa_proof
 import database
 
 app = Flask(__name__)
@@ -100,7 +100,7 @@ async def vote():
     is_valid = (block_data["previous_hash"] == last_block.hash and
                 block_data["block_index"] == last_block.block_index + 1)
 
-    if is_valid and verify_poa_proof(poa_proof):
+    if is_valid and await verify_poa_proof(poa_proof):
         return jsonify({"vote": True}), 200
     else:
         return jsonify({"vote": False}), 400
