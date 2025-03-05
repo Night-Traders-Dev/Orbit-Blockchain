@@ -65,17 +65,15 @@ async def propose_block():
 
     if not await verify_poa_proof(poa_proof):
         return jsonify({"error": "Invalid Proof of Accuracy"}), 400
-
-    votes = await collect_votes(new_block)
+    
+    votes = await collect_votes(new_block, poa_proof)
+    print(f"{votes}\n\n")
     if votes.count(True) > votes.count(False):
         await approve_and_add_block(new_block, tx_data)
         await database.mark_transaction_as_spent(txn["tx_id"])
         return jsonify({"status": "Block added", "block": new_block.to_dict()}), 200
     else:
-        await approve_and_add_block(new_block, tx_data)
-        await database.mark_transaction_as_spent(txn["tx_id"])
-        return jsonify({"status": "Block added", "block": new_block.to_dict()}), 200
-#        return jsonify({"error": "Block rejected by network"}), 400
+        return jsonify({"error": "Block rejected by network"}), 400
 
 @app.route('/recent_blocks', methods=['GET'])
 async def get_recent_blocks():
@@ -107,7 +105,7 @@ async def vote():
     else:
         return jsonify({"vote": False}), 400
 
-async def collect_votes(block):
+async def collect_votes(block, poa_proof):
     """Ask nodes to vote asynchronously."""
     if not nodes:
         print("[INFO] No nodes available. Auto-approving block.")
@@ -117,7 +115,7 @@ async def collect_votes(block):
     async with aiohttp.ClientSession() as session:
         for node in nodes:
             try:
-                async with session.post(f"{node}/vote", json={"block": block.to_dict()}) as response:
+                async with session.post(f"{node}/vote", json={"block": block.to_dict(), "poa_proof": poa_proof}) as response:
                     if response.status == 200:
                         vote_data = await response.json()
                         votes.append(vote_data.get("vote", False))
