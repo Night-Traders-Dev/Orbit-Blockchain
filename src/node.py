@@ -67,7 +67,6 @@ async def propose_block():
         return jsonify({"error": "Invalid Proof of Accuracy"}), 400
     
     votes = await collect_votes(new_block, poa_proof)
-    print(f"{votes}\n\n")
     if votes.count(True) > votes.count(False):
         await approve_and_add_block(new_block, tx_data)
         await database.mark_transaction_as_spent(txn["tx_id"])

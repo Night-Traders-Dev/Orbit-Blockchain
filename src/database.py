@@ -45,6 +45,13 @@ async def init_db():
                 data TEXT
             )
         """)
+        await client.execute("""
+            CREATE TABLE IF NOT EXISTS accounts (
+                address TEXT PRIMARY KEY,
+                balance INTEGER NOT NULL DEFAULT 0,
+                nonce INTEGER NOT NULL DEFAULT 0
+            )
+        """)                 
 
         # Ensure last_block is tracked
         await client.execute("INSERT OR IGNORE INTO metadata (key, value) VALUES ('last_block', '0')")
