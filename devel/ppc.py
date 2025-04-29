@@ -3,12 +3,12 @@ import base64
 import getpass
 import hashlib
 import hmac
+import math
 import os
 import random
 import struct
 import sys
 from functools import lru_cache
-import math
 
 # ======== Core Crypto Functions ========
 
@@ -56,14 +56,18 @@ def enhance_iv_with_primes(iv, primes, sbox):
     for i in range(len(enhanced_iv)):
         enhanced_iv[i] ^= primes[i % len(primes)] & 0xFF
         enhanced_iv[i] = sbox[enhanced_iv[i]]
-    return enhanced_iv                                                                                                                                                           
+    return enhanced_iv
+
 def mix_bytes(a, b, c, d, sbox):
     a = sbox[a]
     b = sbox[(b + a) & 0xFF]
     c = sbox[(c + b) & 0xFF]
     d = sbox[(d + c) & 0xFF]
-    a = rotate_bits(a, 1) ^ rotate_bits(d, 3)                                                                                                                                        b = rotate_bits(b, 2) ^ rotate_bits(a, 1)
-    c = rotate_bits(c, 3) ^ rotate_bits(b, 2)                                                                                                                                        d = rotate_bits(d, 4) ^ rotate_bits(c, 3)                                                                                                                                        return a, b, c, d
+    a = rotate_bits(a, 1) ^ rotate_bits(d, 3)
+    b = rotate_bits(b, 2) ^ rotate_bits(a, 1)
+    c = rotate_bits(c, 3) ^ rotate_bits(b, 2)
+    d = rotate_bits(d, 4) ^ rotate_bits(c, 3)
+    return a, b, c, d
 
 def password_to_key_material(password, salt, iterations=100_000):
     return hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, iterations, dklen=64)
@@ -178,30 +182,22 @@ def decrypt(encrypted_b64, password):
 # ======== Public Key Cryptography Functions ========
 
 def generate_prime(bits):
-    """Generate a prime number with the specified number of bits."""
     while True:
-        # Generate a random odd number with the desired bit length
         p = random.getrandbits(bits) | (1 << (bits - 1)) | 1
-        # Check if it's prime using probabilistic primality test
         if is_probably_prime(p, 10):
             return p
 
 def is_probably_prime(n, k=40):
-    """Miller-Rabin primality test."""
     if n <= 1:
         return False
     if n <= 3:
         return True
     if n % 2 == 0:
         return False
-
-    # Write n-1 as 2^r * d
     r, d = 0, n - 1
     while d % 2 == 0:
         r += 1
         d //= 2
-
-    # Witness loop
     for _ in range(k):
         a = random.randint(2, n - 2)
         x = pow(a, d, n)
@@ -216,7 +212,6 @@ def is_probably_prime(n, k=40):
     return True
 
 def extended_gcd(a, b):
-    """Extended Euclidean Algorithm to find GCD and Bezout coefficients."""
     if a == 0:
         return b, 0, 1
     else:
@@ -224,7 +219,6 @@ def extended_gcd(a, b):
         return gcd, y - (b // a) * x, x
 
 def mod_inverse(a, m):
-    """Find the modular multiplicative inverse of a under modulo m."""
     gcd, x, y = extended_gcd(a, m)
     if gcd != 1:
         raise ValueError("Modular inverse does not exist")
@@ -232,34 +226,22 @@ def mod_inverse(a, m):
         return x % m
 
 def generate_keypair(bits=2048):
-    """Generate an RSA key pair with the specified bit length."""
-    # Generate two distinct prime numbers
     p = generate_prime(bits // 2)
     q = generate_prime(bits // 2)
     while p == q:
         q = generate_prime(bits // 2)
-
-    # Calculate n and phi(n)
     n = p * q
     phi = (p - 1) * (q - 1)
-
-    # Choose e such that 1 < e < phi and gcd(e, phi) = 1
-    e = 65537  # Common choice for e
+    e = 65537
     while math.gcd(e, phi) != 1:
         e += 2
-
-    # Calculate d such that (d * e) % phi = 1
     d = mod_inverse(e, phi)
-
-    # Return the key pair
     return {
         'private': {'d': d, 'n': n, 'p': p, 'q': q},
         'public': {'e': e, 'n': n}
     }
 
 def save_keypair(keypair, private_file, public_file, passphrase=None):
-    """Save key pair to files."""
-    # Save private key (encrypted if passphrase is provided)
     private_key_data = {
         'd': keypair['private']['d'],
         'n': keypair['private']['n'],
@@ -267,18 +249,13 @@ def save_keypair(keypair, private_file, public_file, passphrase=None):
         'q': keypair['private']['q']
     }
     private_key_bytes = str(private_key_data).encode('utf-8')
-
     if passphrase:
-        # Encrypt the private key with the passphrase
         encrypted_private_key = encrypt(private_key_bytes, passphrase)
         with open(private_file, 'wb') as f:
             f.write(encrypted_private_key)
     else:
-        # Save the private key as a base64 encoded string
         with open(private_file, 'w') as f:
             f.write(base64.b64encode(private_key_bytes).decode('utf-8'))
-
-    # Save public key
     public_key_data = {
         'e': keypair['public']['e'],
         'n': keypair['public']['n']
@@ -287,34 +264,25 @@ def save_keypair(keypair, private_file, public_file, passphrase=None):
         f.write(base64.b64encode(str(public_key_data).encode('utf-8')).decode('utf-8'))
 
 def load_public_key(public_file):
-    """Load a public key from a file."""
     with open(public_file, 'r') as f:
         public_key_b64 = f.read().strip()
-
     public_key_str = base64.b64decode(public_key_b64).decode('utf-8')
-    public_key_data = ast.literal_eval(public_key_str)  # Use eval to convert the string to a dictionary
-
+    public_key_data = ast.literal_eval(public_key_str)
     return {
         'e': public_key_data['e'],
         'n': public_key_data['n']
     }
 
 def load_private_key(private_file, passphrase=None):
-    """Load a private key from a file."""
     with open(private_file, 'rb') as f:
         private_key_data = f.read()
-
     try:
         if passphrase:
-            # Decrypt the private key with the passphrase
             private_key_bytes = decrypt(private_key_data, passphrase)
             private_key_str = private_key_bytes.decode('utf-8')
         else:
-            # Decode the base64 encoded private key
             private_key_str = base64.b64decode(private_key_data).decode('utf-8')
-
-        private_key_data = ast.literal_eval(private_key_str)  # Use eval to convert the string to a dictionary
-
+        private_key_data = ast.literal_eval(private_key_str)
         return {
             'd': private_key_data['d'],
             'n': private_key_data['n'],
@@ -325,76 +293,36 @@ def load_private_key(private_file, passphrase=None):
         raise ValueError(f"Failed to load private key: {e}")
 
 def rsa_encrypt(message, public_key):
-    """Encrypt a message using RSA public key."""
-    # In a real implementation, you would use proper padding like OAEP
-    # For simplicity, we're implementing a basic version
-
-    chunk_size = (public_key['n'].bit_length() // 8) - 11  # Leave room for padding
-
+    chunk_size = (public_key['n'].bit_length() // 8) - 11
     if len(message) > chunk_size:
         raise ValueError(f"Message too long for RSA encryption (max {chunk_size} bytes)")
-
-    # Simple padding: prepend random bytes
     padded = os.urandom(8) + message
-
-    # Convert to integer
     m = int.from_bytes(padded, byteorder='big')
-
-    # Encrypt: c = m^e mod n
     c = pow(m, public_key['e'], public_key['n'])
-
     return c.to_bytes((c.bit_length() + 7) // 8, byteorder='big')
 
 def rsa_decrypt(ciphertext, private_key):
-    """Decrypt a message using RSA private key."""
-    # Convert ciphertext to integer
     c = int.from_bytes(ciphertext, byteorder='big')
-
-    # Decrypt: m = c^d mod n
     m = pow(c, private_key['d'], private_key['n'])
-
-    # Convert back to bytes
     decrypted = m.to_bytes((m.bit_length() + 7) // 8, byteorder='big')
-
-    # Remove padding (first 8 bytes)
     return decrypted[8:]
 
 def hybrid_encrypt(plaintext_bytes, recipient_public_key_file):
-    """Encrypt a file using a hybrid encryption scheme."""
-    # Generate a random symmetric key
     symmetric_key = os.urandom(32).hex()
-
-    # Encrypt the plaintext with the symmetric key
     encrypted_data = encrypt(plaintext_bytes, symmetric_key)
-
-    # Load the recipient's public key
     public_key = load_public_key(recipient_public_key_file)
-
-    # Encrypt the symmetric key with the recipient's public key
     encrypted_key = rsa_encrypt(symmetric_key.encode('utf-8'), public_key)
-
-    # Package everything together
     key_length = len(encrypted_key)
     package = struct.pack("<I", key_length) + encrypted_key + encrypted_data
-
     return package
 
 def hybrid_decrypt(encrypted_package, private_key_file, passphrase=None):
-    """Decrypt a file using a hybrid encryption scheme."""
-    # Unpack the package
     key_length = struct.unpack("<I", encrypted_package[:4])[0]
     encrypted_key = encrypted_package[4:4+key_length]
     encrypted_data = encrypted_package[4+key_length:]
-
-    # Load the private key
     private_key = load_private_key(private_key_file, passphrase)
-
-    # Decrypt the symmetric key
     symmetric_key = rsa_decrypt(encrypted_key, private_key).decode('utf-8')
-
-    # Decrypt the data with the symmetric key
     decrypted_data = decrypt(encrypted_data, symmetric_key)
-
     return decrypted_data
 
 # ======== CLI Handling ========
@@ -418,8 +346,6 @@ def decrypt_file(input_file, output_file, password):
 def generate_keys(private_key_file, public_key_file, bits=2048):
     print(f"Generating {bits}-bit RSA key pair...")
     keypair = generate_keypair(bits)
-
-    # Optionally secure the private key with a passphrase
     use_passphrase = input("Secure private key with a passphrase? (y/n): ").lower() == 'y'
     passphrase = None
     if use_passphrase:
@@ -428,39 +354,28 @@ def generate_keys(private_key_file, public_key_file, bits=2048):
         if passphrase != passphrase_confirm:
             print("Error: Passphrases do not match")
             return
-
     save_keypair(keypair, private_key_file, public_key_file, passphrase)
     print(f"Keys generated and saved to {private_key_file} and {public_key_file}")
 
 def pk_encrypt_file(input_file, output_file, public_key_file):
     with open(input_file, 'rb') as f:
         plaintext = f.read()
-
     encrypted = hybrid_encrypt(plaintext, public_key_file)
-
     with open(output_file, 'wb') as f:
         f.write(encrypted)
-
     print(f"Encrypted {input_file} -> {output_file} using public key from {public_key_file}")
 
 def pk_decrypt_file(input_file, output_file, private_key_file):
     with open(input_file, 'rb') as f:
         encrypted = f.read()
-
-    # Check if the private key is passphrase protected
     passphrase = None
     try:
-        # Try to load without passphrase first
         load_private_key(private_key_file)
     except:
-        # If that fails, prompt for passphrase
         passphrase = getpass.getpass(prompt="Enter passphrase for private key: ")
-
     decrypted = hybrid_decrypt(encrypted, private_key_file, passphrase)
-
     with open(output_file, 'wb') as f:
         f.write(decrypted)
-
     print(f"Decrypted {input_file} -> {output_file} using private key from {private_key_file}")
 
 def print_usage():
@@ -478,44 +393,36 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print_usage()
         sys.exit(1)
-
     mode = sys.argv[1]
-
     try:
         if mode == 'encrypt' and len(sys.argv) == 4:
             input_file = sys.argv[2]
             output_file = sys.argv[3]
             password = getpass.getpass(prompt="Enter password: ")
             encrypt_file(input_file, output_file, password)
-
         elif mode == 'decrypt' and len(sys.argv) == 4:
             input_file = sys.argv[2]
             output_file = sys.argv[3]
             password = getpass.getpass(prompt="Enter password: ")
             decrypt_file(input_file, output_file, password)
-
         elif mode == 'genkeys' and len(sys.argv) >= 4:
             private_key_file = sys.argv[2]
             public_key_file = sys.argv[3]
             bits = int(sys.argv[4]) if len(sys.argv) > 4 else 2048
             generate_keys(private_key_file, public_key_file, bits)
-
         elif mode == 'pkencrypt' and len(sys.argv) == 5:
             input_file = sys.argv[2]
             output_file = sys.argv[3]
             public_key_file = sys.argv[4]
             pk_encrypt_file(input_file, output_file, public_key_file)
-
         elif mode == 'pkdecrypt' and len(sys.argv) == 5:
             input_file = sys.argv[2]
             output_file = sys.argv[3]
             private_key_file = sys.argv[4]
             pk_decrypt_file(input_file, output_file, private_key_file)
-
         else:
             print_usage()
             sys.exit(1)
-
     except Exception as e:
         print("Error:", e)
         sys.exit(1)
