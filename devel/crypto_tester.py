@@ -19,55 +19,16 @@ def test_basic_encryption_decryption():
     encrypted = encrypt(plaintext, password)
     decrypted = decrypt(encrypted, password)
     assert decrypted == plaintext
-    print("PASSED: Basic encryption/decryption.")
-
-def test_padding_edge_case():
-    banner("Padding Edge Case")
-    plaintext = b"A" * 15  # One byte less than block size
-    password = "edgecase123"
-    encrypted = encrypt(plaintext, password)
-    decrypted = decrypt(encrypted, password)
-    assert decrypted == plaintext
-    print("PASSED: Padding edge case handled correctly.")
-
-def test_hmac_tampering():
-    banner("HMAC Tamper Detection")
-    plaintext = b"Data to protect"
-    password = "tamper123"
-    encrypted = bytearray(encrypt(plaintext, password))
-    encrypted[-10] ^= 0xFF  # Flip a byte in HMAC
+    print("PASSED: Basic encryption/decryption.")                                                                                                                                                                                                                                                                                                                 def test_padding_edge_case():                                                                                                                                                        banner("Padding Edge Case")                                                                                                                                                      plaintext = b"A" * 15  # One byte less than block size
+    password = "edgecase123"                                                                                                                                                         encrypted = encrypt(plaintext, password)                                                                                                                                         decrypted = decrypt(encrypted, password)                                                                                                                                         assert decrypted == plaintext
+    print("PASSED: Padding edge case handled correctly.")                                                                                                                                                                                                                                                                                                         def test_hmac_tampering():                                                                                                                                                           banner("HMAC Tamper Detection")                                                                                                                                                  plaintext = b"Data to protect"
+    password = "tamper123"                                                                                                                                                           encrypted = bytearray(encrypt(plaintext, password))                                                                                                                              encrypted[-10] ^= 0xFF  # Flip a byte in HMAC
     try:
         decrypt(encrypted, password)
         print("FAILED: Tampered data was not detected!")
     except ValueError:
-        print("PASSED: Tampering correctly detected.")
-
-def test_wrong_password():
-    banner("Wrong Password Detection")
-    plaintext = b"Sensitive Data"
-    correct_pass = "correcthorsebatterystaple"
-    wrong_pass = "123456"
-    encrypted = encrypt(plaintext, correct_pass)
-    try:
-        decrypt(encrypted, wrong_pass)
-        print("FAILED: Decryption should fail with wrong password!")
-    except ValueError:
-        print("PASSED: Wrong password rejected.")
-
-def test_file_encryption_decryption():
-    banner("File Encrypt/Decrypt Roundtrip")
-    password = "filetest123"
-    content = os.urandom(1024)  # 1KB of random data
-
-    with tempfile.NamedTemporaryFile(delete=False) as plain, \
-         tempfile.NamedTemporaryFile(delete=False) as encrypted, \
-         tempfile.NamedTemporaryFile(delete=False) as decrypted:
-
-        plain.write(content)
-        plain.flush()
-
-        encrypt_file(plain.name, encrypted.name, password)
-        decrypt_file(encrypted.name, decrypted.name, password)
+        print("PASSED: Tampering correctly detected.")                                                                                                                           
+def test_wrong_password():                                                                                                                                                           banner("Wrong Password Detection")                                                                                                                                               plaintext = b"Sensitive Data"                                                                                                                                                    correct_pass = "correcthorsebatterystaple"                                                                                                                                       wrong_pass = "123456"                                                                                                                                                            encrypted = encrypt(plaintext, correct_pass)                                                                                                                                     try:                                                                                                                                                                                 decrypt(encrypted, wrong_pass)                                                                                                                                                   print("FAILED: Decryption should fail with wrong password!")                                                                                                                 except ValueError:                                                                                                                                                                   print("PASSED: Wrong password rejected.")                                                                                                                                                                                                                                                                                                                 def test_file_encryption_decryption():                                                                                                                                               banner("File Encrypt/Decrypt Roundtrip")                                                                                                                                         password = "filetest123"                                                                                                                                                         content = os.urandom(1024)  # 1KB of random data                                                                                                                                                                                                                                                                                                                  with tempfile.NamedTemporaryFile(delete=False) as plain, \                                                                                                                            tempfile.NamedTemporaryFile(delete=False) as encrypted, \                                                                                                                        tempfile.NamedTemporaryFile(delete=False) as decrypted:                                                                                                                                                                                                                                                                                                          plain.write(content)                                                                                                                                                             plain.flush()                                                                                                                                                                                                                                                                                                                                                     encrypt_file(plain.name, encrypted.name, password)                                                                                                                               decrypt_file(encrypted.name, decrypted.name, password)
 
         with open(decrypted.name, 'rb') as f:
             roundtrip = f.read()
