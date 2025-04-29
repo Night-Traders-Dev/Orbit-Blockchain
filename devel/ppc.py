@@ -65,8 +65,7 @@ def mix_bytes(a, b, c, d, sbox):
     d = sbox[(d + c) & 0xFF]
     a = rotate_bits(a, 1) ^ rotate_bits(d, 3)
     b = rotate_bits(b, 2) ^ rotate_bits(a, 1)
-    c = rotate_bits(c, 3) ^ rotate_bits(b, 2)
-    d = rotate_bits(d, 4) ^ rotate_bits(c, 3)
+    c = rotate_bits(c, 3) ^ rotate_bits(b, 2)                                                                                                                                        d = rotate_bits(d, 4) ^ rotate_bits(c, 3)
     return a, b, c, d
 
 def password_to_key_material(password, salt, iterations=100_000):
@@ -325,6 +324,39 @@ def hybrid_decrypt(encrypted_package, private_key_file, passphrase=None):
     decrypted_data = decrypt(encrypted_data, symmetric_key)
     return decrypted_data
 
+SHA256_ASN1_PREFIX = bytes.fromhex(
+    "3031300d060960864801650304020105000420"
+)
+
+def emsa_pkcs1_v1_5_encode(hash_bytes, em_len):
+    t = SHA256_ASN1_PREFIX + hash_bytes
+    if em_len < len(t) + 11:
+        raise ValueError("Intended encoded message length too short")
+    ps = b'\xFF' * (em_len - len(t) - 3)
+    return b'\x00\x01' + ps + b'\x00' + t
+
+def sign_message(message: bytes, private_key: dict) -> bytes:
+    msg_hash = hashlib.sha256(message).digest()
+    k = (private_key['n'].bit_length() + 7) // 8
+    em = emsa_pkcs1_v1_5_encode(msg_hash, k)
+    m_int = int.from_bytes(em, 'big')
+    sig_int = pow(m_int, private_key['d'], private_key['n'])
+    return sig_int.to_bytes(k, 'big')
+
+def verify_signature(message: bytes, signature: bytes, public_key: dict) -> bool:
+    try:
+        sig_int = int.from_bytes(signature, 'big')
+        m_int = pow(sig_int, public_key['e'], public_key['n'])
+        k = (public_key['n'].bit_length() + 7) // 8
+        em = m_int.to_bytes(k, 'big')
+        msg_hash = hashlib.sha256(message).digest()
+        expected_em = emsa_pkcs1_v1_5_encode(msg_hash, k)
+        return em == expected_em
+    except Exception as e:
+        print(f"Verification error: {e}")
+        return False
+
+
 # ======== CLI Handling ========
 
 def encrypt_file(input_file, output_file, password):
@@ -378,51 +410,85 @@ def pk_decrypt_file(input_file, output_file, private_key_file):
         f.write(decrypted)
     print(f"Decrypted {input_file} -> {output_file} using private key from {private_key_file}")
 
+
 def print_usage():
-    print("Enhanced Prime Crypto with Public Key System")
-    print("\nUsage:")
-    print("  Symmetric Encryption:")
-    print("    python enhanced_prime_crypto.py encrypt <input_file> <output_file>")
-    print("    python enhanced_prime_crypto.py decrypt <input_file> <output_file>")
-    print("\n  Public Key Operations:")
-    print("    python enhanced_prime_crypto.py genkeys <private_key_file> <public_key_file> [bits]")
-    print("    python enhanced_prime_crypto.py pkencrypt <input_file> <output_file> <recipient_public_key>")
-    print("    python enhanced_prime_crypto.py pkdecrypt <input_file> <output_file> <private_key>")
+    print("Usage:")
+    print("  encrypt <input_file> <output_file>")
+    print("  decrypt <input_file> <output_file>")
+    print("  genkeys <private_key_file> <public_key_file> [bits]")
+    print("  pkencrypt <input_file> <output_file> <public_key_file>")
+    print("  pkdecrypt <input_file> <output_file> <private_key_file>")
+    print("  sign <input_file> <signature_output_file> <private_key_file>")
+    print("  verify <input_file> <signature_file> <public_key_file>")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print_usage()
         sys.exit(1)
+
     mode = sys.argv[1]
+
     try:
         if mode == 'encrypt' and len(sys.argv) == 4:
             input_file = sys.argv[2]
             output_file = sys.argv[3]
             password = getpass.getpass(prompt="Enter password: ")
             encrypt_file(input_file, output_file, password)
+
         elif mode == 'decrypt' and len(sys.argv) == 4:
             input_file = sys.argv[2]
             output_file = sys.argv[3]
             password = getpass.getpass(prompt="Enter password: ")
             decrypt_file(input_file, output_file, password)
+
         elif mode == 'genkeys' and len(sys.argv) >= 4:
             private_key_file = sys.argv[2]
             public_key_file = sys.argv[3]
             bits = int(sys.argv[4]) if len(sys.argv) > 4 else 2048
             generate_keys(private_key_file, public_key_file, bits)
+
         elif mode == 'pkencrypt' and len(sys.argv) == 5:
             input_file = sys.argv[2]
             output_file = sys.argv[3]
             public_key_file = sys.argv[4]
             pk_encrypt_file(input_file, output_file, public_key_file)
+
         elif mode == 'pkdecrypt' and len(sys.argv) == 5:
             input_file = sys.argv[2]
             output_file = sys.argv[3]
             private_key_file = sys.argv[4]
             pk_decrypt_file(input_file, output_file, private_key_file)
+
+        elif mode == 'sign' and len(sys.argv) == 5:
+            input_file = sys.argv[2]
+            signature_file = sys.argv[3]
+            private_key_file = sys.argv[4]
+            with open(input_file, 'rb') as f:
+                message = f.read()
+            private_key = load_private_key(private_key_file)
+            signature = sign_message(message, private_key)
+            with open(signature_file, 'wb') as f:
+                f.write(signature)
+            print("Message signed successfully.")
+
+        elif mode == 'verify' and len(sys.argv) == 5:
+            input_file = sys.argv[2]
+            signature_file = sys.argv[3]
+            public_key_file = sys.argv[4]
+            with open(input_file, 'rb') as f:
+                message = f.read()
+            with open(signature_file, 'rb') as f:
+                signature = f.read()
+            public_key = load_public_key(public_key_file)
+            if verify_signature(message, signature, public_key):
+                print("Signature is valid.")
+            else:
+                print("Signature is INVALID.")
+
         else:
             print_usage()
             sys.exit(1)
+
     except Exception as e:
         print("Error:", e)
         sys.exit(1)
