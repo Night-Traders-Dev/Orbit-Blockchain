@@ -61,11 +61,7 @@ def enhance_iv_with_primes(iv, primes, sbox):
 def mix_bytes(a, b, c, d, sbox):
     a = sbox[a]
     b = sbox[(b + a) & 0xFF]
-    c = sbox[(c + b) & 0xFF]
-    d = sbox[(d + c) & 0xFF]
-    a = rotate_bits(a, 1) ^ rotate_bits(d, 3)
-    b = rotate_bits(b, 2) ^ rotate_bits(a, 1)
-    c = rotate_bits(c, 3) ^ rotate_bits(b, 2)                                                                                                                                        d = rotate_bits(d, 4) ^ rotate_bits(c, 3)
+    c = sbox[(c + b) & 0xFF]                                                                                                                                                         d = sbox[(d + c) & 0xFF]                                                                                                                                                         a = rotate_bits(a, 1) ^ rotate_bits(d, 3)                                                                                                                                        b = rotate_bits(b, 2) ^ rotate_bits(a, 1)                                                                                                                                        c = rotate_bits(c, 3) ^ rotate_bits(b, 2)                                                                                                                                        d = rotate_bits(d, 4) ^ rotate_bits(c, 3)
     return a, b, c, d
 
 def password_to_key_material(password, salt, iterations=100_000):
